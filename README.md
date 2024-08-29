@@ -1,71 +1,29 @@
 # tgpan: Serverless Telegram-based File Storage System
 
-## Concept
-Inspired by the project tgstate written in golang, now I make it serverless and manageable for small team as casual external file storage.
+## Overview
 
-tgpan is a serverless file storage system that leverages Telegram's infrastructure for storing files. It provides a simple API for uploading and downloading files, with the actual file data being stored in Telegram channels or groups. This approach allows for virtually unlimited, free file storage with the reliability of Telegram's infrastructure. The serverless part relies on fantastic Cloudflare Workers, and it is designed to be fully working with Workers Free plan but recommended to use with Paid plan for better performance and reliability.
+tgpan is a serverless file storage system that leverages Telegram's infrastructure for storing files. It provides a simple API for uploading and downloading files, with the actual file data being stored in Telegram channels or groups. This approach allows for virtually unlimited, free file storage with the reliability of Telegram's infrastructure.
 
-## Architecture
+## Key Features
 
-tgpan is implemented as a Cloudflare Worker, providing a serverless, globally distributed file storage solution. Here's an overview of the system architecture:
+- Serverless architecture using Cloudflare Workers
+- File upload and download via API
+- Support for large file uploads through chunking
+- Flexible file expiration system
+- User management system with admin capabilities
+- Integration with Telegram for file storage
 
-```mermaid
-graph TD
-    A[Client] -->|Upload/Download Request| B[Cloudflare Worker]
-    B -->|Store Metadata| C[Cloudflare KV]
-    B -->|File Storage/Retrieval| D[Telegram API]
-    E[Cron Trigger] -->|Scheduled Tasks| B
-    B -->|Delete Expired Files| D
-    B -->|Update Metadata| C
-    subgraph Cloudflare
-        B
-        C
-    end
-    subgraph Telegram
-        D
-    end
-```
+## API Endpoints
 
-### Components:
+- `POST /api/upload`: Upload a file (authenticated)
+- `POST /api/pic`: Upload an image (supports both token query param and Authorization header)
+- `GET /d/:fileId`: Download a file (public access)
+- `POST /api/del`: Delete a file (authenticated)
+- `POST /api/users/create` or `PUT /api/users/create`: Create a new user (admin only)
+- `POST /api/users/update` or `PUT /api/users/update`: Update a user (admin only)
+- `POST /api/users/delete`: Delete a user (admin only)
 
-1. **Cloudflare Worker**: Handles API requests, file processing, and communication with Telegram.
-2. **Cloudflare KV**: Stores file metadata and task information.
-3. **Telegram API**: Used for actual file storage and retrieval.
-4. **Cron Trigger**: Schedules regular tasks like deleting expired files.
-
-## Implementation Details
-
-### File Upload Process:
-
-1. Client sends a file upload request to the Worker.
-2. Worker checks file size:
-   - If file size <= CHUNK_SIZE, upload as a single file.
-   - If file size > CHUNK_SIZE, split into chunks and upload each chunk separately.
-3. For chunked files, create a manifest file with chunk information.
-4. Store file metadata in Cloudflare KV.
-5. Return file ID and download URL to the client.
-
-### File Download Process:
-
-1. Client requests a file download using the file ID.
-2. Worker retrieves file metadata from KV.
-3. If the file is not chunked, stream the file directly from Telegram.
-4. If the file is chunked, retrieve and combine all chunks before streaming to the client.
-
-### Expiry Management:
-
-- A daily cron job checks for expired files.
-- Expired files are deleted from both Telegram and KV storage.
-
-## Usage Instructions
-
-### Prerequisites:
-
-1. Cloudflare Workers account
-2. Telegram Bot Token
-3. Telegram Channel or Group ID
-
-### Setup:
+## Setup and Deployment
 
 1. Clone the repository:
    ```
@@ -78,80 +36,95 @@ graph TD
    npm install
    ```
 
-3. Configure `wrangler.toml`:
+3. Configure `wrangler.toml` with your Cloudflare and Telegram credentials:
    - Set your `BOT_TOKEN` and `CHANNEL_ID`
-   - Configure KV namespace IDs
+   - Configure D1 database and KV namespace IDs
 
-4. Deploy the worker:
+4. Initialize the database:
    ```
-   wrangler publish
+   npm run init-db
    ```
 
-### API Usage:
+5. Create an admin user:
+   ```
+   npm run init-admin
+   ```
 
-#### Upload a File:
-POST /api/upload
-Content-Type: multipart/form-data
+6. Deploy to Cloudflare Workers:
+   ```
+   wrangler deploy
+   ```
 
-Form Data:
-- file: (binary)
+## Usage
 
-Response:
-{
-  "fileId": "unique_file_id",
-  "downloadUrl": "/d/unique_file_id"
-}
+### Uploading a File
 
-#### Upload an Image:
-POST /api/pic
-Content-Type: application/octet-stream
-
-Request Body:
-- Raw image data
-
-Response:
-{
-  "fileId": "unique_file_id",
-  "downloadUrl": "/d/unique_file_id"
-}
-
-#### Download a File:
-GET /d/:fileId
-
-### Test
-```
-curl -X POST https://tgpan.lvtu.in/api/upload -F "file=@/path/to/your/file"
-```
+default no expir
 
 ```
-curl https://tgpan.yourdomain.com/d/unique_file_id
+curl -X POST https://your-worker.workers.dev/api/upload \
+-H "Authorization: Bearer YOUR_USER_TOKEN" \
+-F "file=@/path/to/your/file" \
+-F "expiryHours=24" # Optional: Set expiry time in hours
 ```
 
-```test pic
-curl -X POST https://tgpan.yourdomain.com/api/pic -F "image=@/path/to/your/image"
+### Uploading an Image
 ```
+curl -X POST https://your-worker.workers.dev/api/pic \
+-H "Authorization: Bearer YOUR_USER_TOKEN" \
+-F "image=@/path/to/your/image.jpg" \
+-F "expiryHours=24" # Optional: Set expiry time in hours
+```
+Alternatively, you can use the `token` query parameter:
+```
+curl -X POST "https://your-worker.workers.dev/api/pic?token=YOUR_USER_TOKEN" \
+-F "image=@/path/to/your/image.jpg"
+```
+
+### Downloading a File
+```
+curl https://your-worker.workers.dev/d/FILE_ID
+```
+
+Add `?dl=true` to force download instead of inline display.
+
+### User Management(admin only)
+
+```
+curl -X POST https://your-worker.workers.dev/api/users/create \
+-H "Authorization: Bearer ADMIN_TOKEN" \
+-H "Content-Type: application/json" \
+-d '{"username": "newuser"}'
+```
+
 
 ## Configuration Options
 
 - `CHUNK_SIZE`: Maximum size of a single file chunk (default: 10MB)
-- `FILE_EXPIRY`: Time until a file expires (default: 7 days)
+- `PIC_MAX_SIZE`: Maximum size for images uploaded via `/api/pic` (default: 30MB)
 
 These can be adjusted in the `wrangler.toml` file.
 
-## PicGo Plugin
+## Database Schema
 
-A PicGo plugin is provided in the `scripts` folder to allow easy integration with PicGo for image uploads.
+The system uses a D1 database with two tables:
 
-### Installation:
+### Users Table
+- `id`: TEXT PRIMARY KEY
+- `token`: TEXT UNIQUE NOT NULL
+- `username`: TEXT UNIQUE NOT NULL
+- `enabled`: BOOLEAN NOT NULL DEFAULT TRUE
 
-1. Copy `scripts/picgo-plugin-tgpan.js` to your PicGo plugins folder.
-2. Restart PicGo.
-3. Enable the "tgpan" plugin in PicGo settings.
-4. Configure the plugin with your tgpan URL.
-
-### Usage:
-
-Once configured, you can select "tgpan" as your image upload service in PicGo.
+### Files Table
+- `id`: TEXT PRIMARY KEY
+- `userId`: TEXT NOT NULL
+- `filename`: TEXT NOT NULL
+- `size`: INTEGER NOT NULL
+- `chunks`: INTEGER NOT NULL
+- `chunkIds`: TEXT NOT NULL (JSON array of chunk IDs)
+- `expiresAt`: DATETIME
+- `fileType`: TEXT NOT NULL
+- `uploadedAt`: DATETIME NOT NULL
 
 ## Limitations and Considerations
 
@@ -161,16 +134,7 @@ Once configured, you can select "tgpan" as your image upload service in PicGo.
 
 ## Contributing
 
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a new branch for your feature
-3. Make your changes
-4. Write or update tests as necessary
-5. Run the test suite
-6. Submit a pull request
-
-Please ensure your code adheres to the existing style and passes all tests before submitting a pull request.
+Contributions are welcome! Please fork the repository and submit a pull request with your changes.
 
 ## License
 

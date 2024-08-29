@@ -1,4 +1,6 @@
 .aider*
+.wrangler
+bak
 # Python
 __pycache__/
 *.py[cod]

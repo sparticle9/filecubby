@@ -1,3 +1,3 @@
 import { Env } from './index'
 
-export const getChunkSize = (env: Env) => parseInt(env.CHUNK_SIZE || '10485760', 10)  // Default to 10MB if not set
+export const getChunkSize = (env: Env) => parseInt(env.CHUNK_SIZE || '20971520', 10)  // Default to 20MB if not set

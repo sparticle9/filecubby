@@ -1,99 +1,157 @@
 import { Context } from 'hono'
 import { Env } from '../index'
-import { getChunkSize } from '../config'
-import { FileMetadata } from '../types'
 import { determineFileType } from '../utils/fileUtils'
+import { uploadFile, uploadToTelegramDocument } from '../utils/fileUpload'
+import { User } from '../db'
+import { saveFileMetadata, getFileMetadata } from '../db'
+import { generateFileId } from '../utils'
+import { writeAnalytics } from '../utils/analytics'
+import { getChunkSize } from '../config'
 
-export async function uploadFile(c: Context<{ Bindings: Env }>) {
-  const { BOT_TOKEN, CHANNEL_ID, FILE_METADATA } = c.env
-  const formData = await c.req.formData()
-  const file = formData.get('file') as File
-  const CHUNK_SIZE = getChunkSize(c.env)
-
-  if (!file) {
-    return c.json({ Code: 0, Message: 'No file uploaded' })
+export async function uploadHandler(c: Context<{ Bindings: Env, Variables: { user: User } }>) {
+  const user = c.get('user')
+  if (!user) {
+    return c.json({ Code: 0, Message: 'Unauthorized' }, 401)
   }
 
-  const fileName = file.name
-  const fileSize = file.size
-  const fileType = await determineFileType(file)
+  const startTime = Date.now();
 
-  // Get the host from the request headers
-  const host = c.req.header('Host') || ''
-  const protocol = c.req.header('X-Forwarded-Proto') || 'https'
+  try {
+    const formData = await c.req.formData()
+    const file = formData.get('file') as File | null
+    const expiryHours = formData.get('expiryHours') ? parseInt(formData.get('expiryHours') as string) : null
+    const isChunk = formData.get('isChunk') === 'true'
+    const isManifest = formData.get('isManifest') === 'true'
 
-  if (fileSize <= CHUNK_SIZE) {
-    // Single file upload
-    const fileId = await uploadToTelegram(BOT_TOKEN, CHANNEL_ID, file, fileName)
-    const metadata: FileMetadata = {
-      fileName,
-      fileSize,
-      fileType,
-      isChunked: false,
-      uploadTime: Date.now(),
-      expiryTime: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days expiry
-    }
-    await storeFileMetadata(FILE_METADATA, fileId, metadata)
-    const fullUrl = `${protocol}://${host}/d/${fileId}`
-    return c.json({ Code: 1, Message: 'File uploaded successfully', url: fullUrl })
-  } else {
-    // Chunked upload
-    const chunks = Math.ceil(fileSize / CHUNK_SIZE)
-    const chunkIds = []
-
-    for (let i = 0; i < chunks; i++) {
-      const start = i * CHUNK_SIZE
-      const end = Math.min(start + CHUNK_SIZE, fileSize)
-      const chunk = file.slice(start, end)
-      const chunkName = `${fileName}.part${i + 1}`
-      const chunkId = await uploadToTelegram(BOT_TOKEN, CHANNEL_ID, chunk, chunkName)
-      chunkIds.push(chunkId)
+    if (!file) {
+      return c.json({ Code: 0, Message: 'No file uploaded' })
     }
 
-    // Create manifest file
-    const manifestContent = `tgstate-blob\n${fileName}\nsize${fileSize}\n${chunkIds.join('\n')}`
-    const manifestFile = new File([manifestContent], 'manifest.txt', { type: 'text/plain' })
-    const manifestId = await uploadToTelegram(BOT_TOKEN, CHANNEL_ID, manifestFile, 'manifest.txt')
+    const fileType = await determineFileType(file)
+    const host = c.req.header('Host') || ''
+    const protocol = c.req.header('X-Forwarded-Proto') || 'https'
+    
+    const chunkSize = getChunkSize(c.env)
 
-    const metadata: FileMetadata = {
-      fileName,
-      fileSize,
-      fileType,
-      isChunked: true,
-      chunkIds,
-      uploadTime: Date.now(),
-      expiryTime: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days expiry
+    if (isChunk) {
+      // Handle chunk upload
+      const result = await uploadFile(c.env, user.id, file, fileType, expiryHours, true, uploadToTelegramDocument, host, protocol);
+      return c.json({ 
+        Code: 1, 
+        Message: 'Chunk uploaded successfully', 
+        chunkId: result.chunkId,
+        fileType: fileType,
+        isChunked: true
+      });
+    } else if (isManifest) {
+      // Handle manifest upload
+      const manifestContent = await file.text();
+      const manifest = JSON.parse(manifestContent);
+      
+      let fileId = generateFileId();
+      while (await getFileMetadata(c.env.METADB, fileId)) {
+        fileId = generateFileId();
+      }
+      
+      const metadata = {
+        id: fileId,
+        userId: user.id,
+        filename: manifest.fileName,
+        size: manifest.fileSize,
+        chunks: manifest.chunkIds.length,
+        chunkIds: manifest.chunkIds,
+        expiresAt: expiryHours ? new Date(Date.now() + expiryHours * 60 * 60 * 1000) : null,
+        fileType: manifest.fileType,
+        uploadedAt: new Date()
+      };
+      
+      await saveFileMetadata(c.env.METADB, metadata);
+      
+      const fullUrl = `${protocol}://${host}/d/${fileId}`;
+      
+      return c.json({ 
+        Code: 1, 
+        Message: 'File uploaded successfully', 
+        fileId: fileId,
+        url: fullUrl,
+        filename: manifest.fileName,
+        isChunked: true
+      });
+    } else {
+      // Handle single file upload
+      const result = await uploadFile(c.env, user.id, file, fileType, expiryHours, false, uploadToTelegramDocument, host, protocol);
+      const fullUrl = `${protocol}://${host}/d/${result.fileId}`;
+
+      const responseTime = Date.now() - startTime;
+      await writeAnalytics(c.env.ANALYTICS_ENGINE, {
+        action: 'upload',
+        fileType: fileType,
+        fileSize: file.size,
+        responseTime,
+        isChunked: false
+      });
+
+      return c.json({ 
+        Code: 1, 
+        Message: 'File uploaded successfully', 
+        fileId: result.fileId,
+        url: fullUrl,
+        filename: file.name,
+        isChunked: false
+      });
     }
-    await storeFileMetadata(FILE_METADATA, manifestId, metadata)
-    const fullUrl = `${protocol}://${host}/d/${manifestId}`
-    return c.json({ Code: 1, Message: 'File uploaded successfully', url: fullUrl })
+  } catch (error) {
+    console.error('Error in uploadHandler:', error);
+    const responseTime = Date.now() - startTime;
+    await writeAnalytics(c.env.ANALYTICS_ENGINE, {
+      action: 'error',
+      errorType: 'upload_handler_error',
+      responseTime
+    });
+    return c.json({ Code: 0, Message: `Failed to upload file: ${error.message}` }, 500);
   }
 }
 
-async function uploadToTelegram(botToken: string, channelId: string, file: File | Blob, fileName: string): Promise<string> {
+async function uploadToTelegramDocument(botToken: string, channelId: string, file: File, fileName: string): Promise<string> {
   const formData = new FormData()
   formData.append('chat_id', channelId)
-  formData.append('document', file, fileName)
+  
+  // Use the original file name instead of the generated one
+  const originalFileName = file.name || fileName
+  
+  console.log('uploadToTelegramDocument: Uploading file with name:', originalFileName)
+  formData.append('document', file, originalFileName)
 
+  console.log('uploadToTelegramDocument: Sending request to Telegram API')
   const response = await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, {
     method: 'POST',
     body: formData,
   })
 
   const result = await response.json()
+  console.log('uploadToTelegramDocument: Telegram API response:', JSON.stringify(result, null, 2))
+
   if (!result.ok) {
     console.error('Failed to upload to Telegram:', result.description)
-    throw new Error('Failed to upload to Telegram')
+    throw new Error(`Failed to upload to Telegram: ${result.description}`)
   }
 
-  if (!result.result.document || !result.result.document.file_id) {
+  let fileId: string | undefined
+
+  if (result.result.document) {
+    fileId = result.result.document.file_id
+  } else if (result.result.audio) {
+    fileId = result.result.audio.file_id
+  } else {
     console.error('Unexpected response format:', result)
-    throw new Error('Failed to get file ID from Telegram')
+    throw new Error('Failed to get file ID from Telegram: Unexpected response format')
   }
 
-  return result.result.document.file_id
-}
+  if (!fileId) {
+    console.error('File ID not found in response:', result)
+    throw new Error('Failed to get file ID from Telegram: File ID not found')
+  }
 
-async function storeFileMetadata(KV: KVNamespace, fileId: string, metadata: FileMetadata) {
-  await KV.put(`file:${fileId}`, JSON.stringify(metadata))
+  console.log('uploadToTelegramDocument: File ID received:', fileId)
+  return fileId
 }

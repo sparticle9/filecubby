@@ -26,45 +26,33 @@ const MAGIC_NUMBERS: { [key: string]: string } = {
 };
 
 export async function determineFileType(file: File): Promise<string> {
-  // Check content (magic numbers)
-  const buffer = await file.slice(0, 16).arrayBuffer();
-  const header = Array.from(new Uint8Array(buffer))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-
-  for (const [magic, type] of Object.entries(MAGIC_NUMBERS)) {
-    if (header.startsWith(magic.toLowerCase())) {
-      return type;
-    }
-  }
-
-  // Additional checks for text-based files
-  const textBasedExtensions = {
-    'md': 'text/markdown',
-    'markdown': 'text/markdown',
-    'json': 'application/json',
-    'yaml': 'text/yaml',
-    'yml': 'text/yaml',
-    'txt': 'text/plain'
-  };
-
-  const fileExtension = file.name.split('.').pop()?.toLowerCase();
-  if (fileExtension && textBasedExtensions[fileExtension]) {
-    return textBasedExtensions[fileExtension];
-  }
-
-  // If content check fails, use the file's reported MIME type
+  // Use the file's type if available and not generic
   if (file.type && file.type !== 'application/octet-stream') {
     return file.type;
   }
 
-  // As a last resort, fall back to extension-based detection
-  switch (fileExtension) {
+  // If type is not available or generic, try to determine from the file extension
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  switch (extension) {
+    case 'mp4':
+      return 'video/mp4';
+    case 'webm':
+      return 'video/webm';  // Explicitly handle WebM
+    case 'ogg':
+      return 'video/ogg';
+    case 'mov':
+      return 'video/quicktime';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'gif':
+      return 'image/gif';
     case 'pdf':
       return 'application/pdf';
-    case 'm4a':
-      return 'audio/m4a';
+    // Add more cases as needed
     default:
-      return 'application/octet-stream';
+      return 'application/octet-stream'; // Default to binary data
   }
 }

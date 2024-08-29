@@ -1,24 +1,65 @@
 import { Context } from 'hono'
 import { Env } from '../index'
+import { getFileMetadata } from '../db'
+import { writeAnalytics } from '../utils/analytics'
 
 export async function downloadFile(c: Context<{ Bindings: Env }>) {
-  const { BOT_TOKEN, FILE_METADATA } = c.env
+  const startTime = Date.now();
   const fileId = c.req.param('fileId')
-  const dl = c.req.query('dl') === 'true'  // Default is now false
+  const forceDownload = c.req.query('dl') === 'true'
 
-  // Get file metadata from KV
-  const metadata = await FILE_METADATA.get(`file:${fileId}`, 'json')
-  if (!metadata) {
-    return c.json({ Code: 0, Message: 'File not found' }, 404)
-  }
+  try {
+    const metadata = await getFileMetadata(c.env.METADB, fileId)
+    if (!metadata) {
+      return c.json({ Code: 0, Message: 'File not found' }, 404)
+    }
 
-  if (!metadata.isChunked) {
-    // Single file download
-    const fileUrl = await getFileUrl(BOT_TOKEN, fileId)
-    return streamFile(c, fileUrl, metadata.fileName, metadata.fileType, dl)
-  } else {
-    // Chunked file download
-    return streamChunkedFile(c, BOT_TOKEN, metadata, dl)
+    const isInlineViewable = ['audio', 'video', 'image', 'application/pdf'].some(type => metadata.fileType.startsWith(type))
+
+    const headers: HeadersInit = {
+      'Content-Type': metadata.fileType || 'application/octet-stream',
+      'Content-Length': metadata.size.toString(),
+    }
+
+    if (forceDownload || !isInlineViewable) {
+      headers['Content-Disposition'] = `attachment; filename="${encodeURIComponent(metadata.filename)}"`
+    } else {
+      headers['Content-Disposition'] = `inline; filename="${encodeURIComponent(metadata.filename)}"`
+    }
+
+    let response: Response;
+
+    if (metadata.chunks > 1) {
+      // Handle chunked file
+      response = await streamChunkedFile(c.env.BOT_TOKEN, metadata, parseInt(c.env.MAX_RETRY_FROM_TG))
+    } else {
+      // Handle single file
+      const fileUrl = await getFileUrl(c.env.BOT_TOKEN, metadata.chunkIds[0])
+      response = await fetch(fileUrl)
+    }
+
+    const responseTime = Date.now() - startTime;
+    await writeAnalytics(c.env.ANALYTICS_ENGINE, {
+      action: 'download',
+      fileType: metadata.fileType,
+      fileSize: metadata.size,
+      responseTime,
+      isChunked: metadata.chunks > 1
+    });
+
+    return new Response(response.body, {
+      status: 200,
+      headers: { ...headers, ...response.headers }
+    })
+  } catch (error) {
+    console.error('Error in downloadFile:', error);
+    const responseTime = Date.now() - startTime;
+    await writeAnalytics(c.env.ANALYTICS_ENGINE, {
+      action: 'error',
+      errorType: 'download_error',
+      responseTime
+    });
+    return c.json({ Code: 0, Message: `Failed to download file: ${error.message}` }, 500);
   }
 }
 
@@ -26,73 +67,65 @@ async function getFileUrl(botToken: string, fileId: string): Promise<string> {
   const response = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`)
   const result = await response.json()
   if (!result.ok) {
-    throw new Error('Failed to get file from Telegram')
+    throw new Error(`Failed to get file from Telegram: ${result.description}`)
   }
   return `https://api.telegram.org/file/bot${botToken}/${result.result.file_path}`
 }
 
-async function streamFile(c: Context, fileUrl: string, fileName: string, fileType: string, dl: boolean) {
-  const response = await fetch(fileUrl)
-  
-  if (dl) {
-    c.header('Content-Disposition', `attachment; filename="${fileName}"`)
-  } else {
-    c.header('Content-Disposition', `inline; filename="${fileName}"`)
-  }
-  
-  // Improved file type handling
-  switch (true) {
-    case fileType.startsWith('audio/'):
-      // For audio files, use the original file type
-      c.header('Content-Type', fileType)
-      break;
-    case fileType === 'application/pdf':
-    case fileType.startsWith('image/'):
-      // PDFs and images can be displayed inline
-      c.header('Content-Type', fileType)
-      break;
-    case fileType === 'text/markdown':
-    case fileType === 'application/json':
-    case fileType === 'text/yaml':
-    case fileType === 'text/plain':
-      // Plaintext files
-      c.header('Content-Type', fileType)
-      break;
-    default:
-      // For other types, use the Content-Type from the response or fall back to octet-stream
-      c.header('Content-Type', response.headers.get('Content-Type') || 'application/octet-stream')
-  }
-  
-  c.header('Content-Length', response.headers.get('Content-Length') || '0')
-  return c.body(response.body)
-}
+async function streamChunkedFile(botToken: string, metadata: any, maxRetries: number): Promise<Response> {
+  let bytesStreamed = 0;
+  const totalSize = metadata.size;
+  let currentChunkIndex = 0;
 
-async function streamChunkedFile(c: Context, botToken: string, metadata: any, dl: boolean) {
-  const fileName = metadata.fileName || 'downloaded_file'
-  
-  if (dl) {
-    c.header('Content-Disposition', `attachment; filename="${fileName}"`)
-  } else {
-    c.header('Content-Disposition', `inline; filename="${fileName}"`)
-  }
-  
-  c.header('Content-Type', metadata.fileType || 'application/octet-stream')
-  c.header('Content-Length', metadata.fileSize.toString())
+  const stream = new ReadableStream({
+    async pull(controller) {
+      if (bytesStreamed >= totalSize || currentChunkIndex >= metadata.chunkIds.length) {
+        controller.close();
+        return;
+      }
 
-  const readable = new ReadableStream({
-    async start(controller) {
-      for (const chunkId of metadata.chunkIds) {
-        const chunkUrl = await getFileUrl(botToken, chunkId)
-        const chunkResponse = await fetch(chunkUrl)
-        const reader = chunkResponse.body.getReader()
-        let done, value
-        while ({ done, value } = await reader.read(), !done) {
-          controller.enqueue(value)
+      const chunkId = metadata.chunkIds[currentChunkIndex];
+      let retries = 0;
+      while (retries < maxRetries) {
+        try {
+          const chunkUrl = await getFileUrl(botToken, chunkId);
+          const response = await fetch(chunkUrl);
+          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+          const reader = response.body!.getReader();
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            if (bytesStreamed + value.length <= totalSize) {
+              controller.enqueue(value);
+              bytesStreamed += value.length;
+            } else {
+              const remainingBytes = totalSize - bytesStreamed;
+              controller.enqueue(value.slice(0, remainingBytes));
+              bytesStreamed = totalSize;
+              break;
+            }
+
+            if (bytesStreamed >= totalSize) {
+              controller.close();
+              return;
+            }
+          }
+
+          currentChunkIndex++;
+          break; // Success, move to next chunk
+        } catch (error) {
+          console.error(`Error streaming chunk ${currentChunkIndex} (attempt ${retries + 1}):`, error);
+          retries++;
+          if (retries >= maxRetries) {
+            throw new Error(`Failed to stream chunk ${currentChunkIndex} after ${maxRetries} attempts`);
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retrying
         }
       }
-      controller.close()
     }
-  })
+  });
 
-  return c.body(readable)
+  return new Response(stream);
 }

@@ -1,20 +1,104 @@
 import { Hono } from 'hono'
-import { uploadFile } from './handlers/upload'
+import { uploadHandler } from './handlers/upload'
 import { downloadFile } from './handlers/download'
 import { deleteExpiredFiles } from './handlers/expiry'
 import { uploadPic } from './handlers/uploadPic'
+import { deleteFile } from './handlers/deleteFile'
+import { handleBotCommand } from './handlers/botCommand'
+import { D1Database } from '@cloudflare/workers-types'
+import { getUser, User } from './db'
+import { handleUserManagement } from './handlers/userManagement'
+import { handleExpiryTask } from './expiryTask'
+import { writeAnalytics } from './utils/analytics';
 
-const app = new Hono<{ Bindings: Env }>()
+const app = new Hono<{ Bindings: Env, Variables: { user: User } }>()
 
-app.post('/api/upload', uploadFile)
-app.get('/d/:fileId', downloadFile)
+// Authentication middleware
+const authMiddleware = async (c: any, next: () => Promise<void>) => {
+  const authHeader = c.req.header('Authorization')
+  
+  if (!authHeader) {
+    return c.json({ Code: 0, Message: 'Unauthorized' }, 401)
+  }
+
+  const [authType, token] = authHeader.split(' ')
+
+  if (authType.toLowerCase() !== 'bearer' || !token) {
+    return c.json({ Code: 0, Message: 'Invalid Authorization header' }, 401)
+  }
+
+  const user = await getUser(c.env.METADB, token)
+
+  if (!user) {
+    console.error('Middleware: Invalid token or user not found')
+    return c.json({ Code: 0, Message: 'Unauthorized' }, 401)
+  }
+
+  c.set('user', user)
+  
+  await next()
+}
+
+// Apply authentication middleware to all routes except /d/:fileId and /api/pic
+app.use('*', async (c, next) => {
+  if (c.req.path.startsWith('/d/') || c.req.path === '/api/pic') {
+    await next()
+  } else {
+    try {
+      await authMiddleware(c, next)
+    } catch (error) {
+      console.error('Error in authentication middleware:', error)
+      return c.json({ Code: 0, Message: 'Internal Server Error' }, 500)
+    }
+  }
+})
+
+// Modify the upload handler
+app.post('/api/upload', async (c) => {
+  const result = await uploadHandler(c);
+  return result;
+});
+
+// Modify the download handler
+app.get('/d/:fileId', async (c) => {
+  return await downloadFile(c);
+});
+
+// Add error handling middleware
+app.onError((err, c) => {
+  console.error('Unhandled error:', err);
+  return c.json({ Code: 0, Message: 'An unexpected error occurred' }, 500);
+});
+
 app.post('/api/delete-expired', deleteExpiredFiles)
-app.post('/api/pic', uploadPic)
+app.post('/api/pic', async (c) => {
+  try {
+    const result = await uploadPic(c)
+    return result
+  } catch (error) {
+    console.error('Error in /api/pic handler:', error)
+    return c.json({ Code: 0, Message: 'Internal server error' }, 500)
+  }
+})
+app.post('/api/del', deleteFile)
+app.post('/bot-webhook', handleBotCommand)
+
+// User management routes
+app.post('/api/users/create', (c) => handleUserManagement(c, 'create'))
+app.put('/api/users/create', (c) => handleUserManagement(c, 'create'))
+app.post('/api/users/update', (c) => handleUserManagement(c, 'update'))
+app.put('/api/users/update', (c) => handleUserManagement(c, 'update'))
+app.post('/api/users/delete', (c) => handleUserManagement(c, 'delete'))
+
+app.get('/test', (c) => {
+  console.log('Test route hit')
+  return c.text('Test successful')
+})
 
 export default {
   fetch: app.fetch,
   scheduled: async (event: ScheduledEvent, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(deleteExpiredFiles(env))
+    ctx.waitUntil(handleExpiryTask(env))
   },
 }
 
@@ -22,7 +106,11 @@ export interface Env {
   BOT_TOKEN: string
   CHANNEL_ID: string
   CHUNK_SIZE: string
-  FILE_METADATA: KVNamespace
   TASKS: KVNamespace
   PIC_MAX_SIZE: string
+  METADB: D1Database
+  ANALYTICS_ENGINE: AnalyticsEngineDataset;
+  MAX_RETRY_FROM_TG: string  // New environment variable
 }
+
+// Remove the handleRequest function as it's no longer needed

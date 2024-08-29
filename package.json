@@ -6,7 +6,12 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler publish",
-    "build": "wrangler build"
+    "build": "wrangler build",
+    "init-db": "wrangler d1 execute tgpan --file=./scripts/schema.sql --remote",
+    "generate-admin-sql": "ts-node scripts/createAdminUser.ts",
+    "init-admin": "npm run init-db && npm run generate-admin-sql && echo 'Executing SQL:' && cat scripts/createAdminUser.sql && wrangler d1 execute tgpan --file=./scripts/createAdminUser.sql --remote",
+    "print-db": "wrangler d1 execute tgpan --command=\"SELECT * FROM files; SELECT * FROM users;\" --remote --json | jq ",
+    "print-remote-db": "wrangler d1 execute tgpan --command=\"SELECT * FROM files; SELECT * FROM users;\" --remote --json | node scripts/formatDbOutput.js"
   },
   "author": "",
   "license": "MIT",
@@ -16,6 +21,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20230518.0",
     "typescript": "^5.2.2",
-    "wrangler": "^3.10.0"
+    "wrangler": "^3.10.0",
+    "ts-node": "^10.9.1"
   }
 }
