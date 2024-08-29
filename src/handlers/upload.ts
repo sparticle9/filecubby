@@ -2,6 +2,7 @@ import { Context } from 'hono'
 import { Env } from '../index'
 import { getChunkSize } from '../config'
 import { FileMetadata } from '../types'
+import { determineFileType } from '../utils/fileUtils'
 
 export async function uploadFile(c: Context<{ Bindings: Env }>) {
   const { BOT_TOKEN, CHANNEL_ID, FILE_METADATA } = c.env
@@ -10,11 +11,16 @@ export async function uploadFile(c: Context<{ Bindings: Env }>) {
   const CHUNK_SIZE = getChunkSize(c.env)
 
   if (!file) {
-    return c.json({ error: 'No file uploaded' }, 400)
+    return c.json({ Code: 0, Message: 'No file uploaded' })
   }
 
   const fileName = file.name
   const fileSize = file.size
+  const fileType = await determineFileType(file)
+
+  // Get the host from the request headers
+  const host = c.req.header('Host') || ''
+  const protocol = c.req.header('X-Forwarded-Proto') || 'https'
 
   if (fileSize <= CHUNK_SIZE) {
     // Single file upload
@@ -22,12 +28,14 @@ export async function uploadFile(c: Context<{ Bindings: Env }>) {
     const metadata: FileMetadata = {
       fileName,
       fileSize,
+      fileType,
       isChunked: false,
       uploadTime: Date.now(),
       expiryTime: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days expiry
     }
     await storeFileMetadata(FILE_METADATA, fileId, metadata)
-    return c.json({ fileId, downloadUrl: `/d/${fileId}` })
+    const fullUrl = `${protocol}://${host}/d/${fileId}`
+    return c.json({ Code: 1, Message: 'File uploaded successfully', url: fullUrl })
   } else {
     // Chunked upload
     const chunks = Math.ceil(fileSize / CHUNK_SIZE)
@@ -50,13 +58,15 @@ export async function uploadFile(c: Context<{ Bindings: Env }>) {
     const metadata: FileMetadata = {
       fileName,
       fileSize,
+      fileType,
       isChunked: true,
       chunkIds,
       uploadTime: Date.now(),
       expiryTime: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days expiry
     }
     await storeFileMetadata(FILE_METADATA, manifestId, metadata)
-    return c.json({ fileId: manifestId, downloadUrl: `/d/${manifestId}` })
+    const fullUrl = `${protocol}://${host}/d/${manifestId}`
+    return c.json({ Code: 1, Message: 'File uploaded successfully', url: fullUrl })
   }
 }
 

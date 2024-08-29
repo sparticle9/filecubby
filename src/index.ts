@@ -2,14 +2,14 @@ import { Hono } from 'hono'
 import { uploadFile } from './handlers/upload'
 import { downloadFile } from './handlers/download'
 import { deleteExpiredFiles } from './handlers/expiry'
-import { uploadPic } from './handlers/uploadPic'  // Add this line
+import { uploadPic } from './handlers/uploadPic'
 
 const app = new Hono<{ Bindings: Env }>()
 
 app.post('/api/upload', uploadFile)
 app.get('/d/:fileId', downloadFile)
-app.post('/api/delete-expired', deleteExpiredFiles)  // Kept as manual failsafe
-app.post('/api/pic', uploadPic)  // Add this line
+app.post('/api/delete-expired', deleteExpiredFiles)
+app.post('/api/pic', uploadPic)
 
 export default {
   fetch: app.fetch,
@@ -24,5 +24,5 @@ export interface Env {
   CHUNK_SIZE: string
   FILE_METADATA: KVNamespace
   TASKS: KVNamespace
-  PIC_MAX_SIZE: string  // Add this line
+  PIC_MAX_SIZE: string
 }

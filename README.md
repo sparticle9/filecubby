@@ -102,8 +102,34 @@ Response:
   "downloadUrl": "/d/unique_file_id"
 }
 
+#### Upload an Image:
+POST /api/pic
+Content-Type: application/octet-stream
+
+Request Body:
+- Raw image data
+
+Response:
+{
+  "fileId": "unique_file_id",
+  "downloadUrl": "/d/unique_file_id"
+}
+
 #### Download a File:
 GET /d/:fileId
+
+### Test
+```
+curl -X POST https://tgpan.lvtu.in/api/upload -F "file=@/path/to/your/file"
+```
+
+```
+curl https://tgpan.yourdomain.com/d/unique_file_id
+```
+
+```test pic
+curl -X POST https://tgpan.yourdomain.com/api/pic -F "image=@/path/to/your/image"
+```
 
 ## Configuration Options
 
@@ -111,6 +137,21 @@ GET /d/:fileId
 - `FILE_EXPIRY`: Time until a file expires (default: 7 days)
 
 These can be adjusted in the `wrangler.toml` file.
+
+## PicGo Plugin
+
+A PicGo plugin is provided in the `scripts` folder to allow easy integration with PicGo for image uploads.
+
+### Installation:
+
+1. Copy `scripts/picgo-plugin-tgpan.js` to your PicGo plugins folder.
+2. Restart PicGo.
+3. Enable the "tgpan" plugin in PicGo settings.
+4. Configure the plugin with your tgpan URL.
+
+### Usage:
+
+Once configured, you can select "tgpan" as your image upload service in PicGo.
 
 ## Limitations and Considerations
 

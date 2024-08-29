@@ -1,6 +1,7 @@
 export interface FileMetadata {
   fileName: string
   fileSize: number
+  fileType: string
   isChunked: boolean
   chunkIds?: string[]
   uploadTime: number
