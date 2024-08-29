@@ -1,0 +1,21 @@
+{
+  "name": "tgpan",
+  "version": "1.0.0",
+  "description": "Telegram-based file storage system",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler publish",
+    "build": "wrangler build"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "hono": "^3.10.2"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20230518.0",
+    "typescript": "^5.2.2",
+    "wrangler": "^3.10.0"
+  }
+}

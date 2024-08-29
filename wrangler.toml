@@ -1,0 +1,17 @@
+name = "tgpan"
+main = "src/index.ts"
+compatibility_date = "2023-07-10"
+
+kv_namespaces = [
+  { binding = "FILE_METADATA", id = "00000000000000000000000000000000" },
+  { binding = "TASKS", id = "00000000000000000000000000000000" }
+]
+
+[vars]
+BOT_TOKEN = "<telegram-bot-token>"
+CHANNEL_ID = "489042798"
+CHUNK_SIZE = "10485760"  # 10MB in bytes, configurable
+PIC_MAX_SIZE = "31457280"  # 30MB in bytes, configurable
+
+[triggers]
+crons = ["0 0 * * *"] # Run daily at midnight
