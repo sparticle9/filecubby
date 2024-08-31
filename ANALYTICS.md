@@ -6,6 +6,8 @@ This document outlines the analytics metrics collected by tgpan and how to use t
 
 tgpan uses Cloudflare's Analytics Engine to collect and analyze important metrics about file uploads, downloads, and errors. The analytics system is designed to be lightweight yet informative, providing key insights into the service's usage and performance.
 
+- Get Started https://developers.cloudflare.com/analytics/analytics-engine/get-started/
+
 ### Metrics Collected
 
 1. **Action Type**

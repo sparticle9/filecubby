@@ -12,12 +12,25 @@ database_id = "8511e92a-cf26-4c0a-bf8f-09587b93f9e7"
 binding = "TASKS"
 id = "00000000000000000000000000000000"
 
+[[kv_namespaces]]
+binding = "USERS"
+id = "00000000000000000000000000000000"
+
+[[kv_namespaces]]
+binding = "FILES"
+id = "00000000000000000000000000000000"
+
+[[kv_namespaces]]
+binding = "FILE_DOWNLOAD_INFO"
+id = "00000000000000000000000000000000"
+
 [vars]
 BOT_TOKEN = "<telegram-bot-token>"
 CHANNEL_ID = "489042798"
 CHUNK_SIZE = "20971520"  # 20MB in bytes (20 * 1024 * 1024)
 PIC_MAX_SIZE = "31457280"  # 30MB in bytes, configurable
 MAX_RETRY_FROM_TG = "3"  # New environment variable
+TG_FILE_URL_TTL = "3600"  # 1 hour in seconds
 
 [triggers]
 crons = ["0 0 * * *"] # Run daily at midnight

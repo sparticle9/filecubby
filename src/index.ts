@@ -14,29 +14,33 @@ import { writeAnalytics } from './utils/analytics';
 const app = new Hono<{ Bindings: Env, Variables: { user: User } }>()
 
 // Authentication middleware
-const authMiddleware = async (c: any, next: () => Promise<void>) => {
+const authMiddleware = async (c: Context<{ Bindings: Env }>, next: () => Promise<void>) => {
   const authHeader = c.req.header('Authorization')
   
   if (!authHeader) {
-    return c.json({ Code: 0, Message: 'Unauthorized' }, 401)
+    return c.json({ Code: 0, Message: 'Unauthorized: No Authorization header' }, 401)
   }
 
   const [authType, token] = authHeader.split(' ')
 
   if (authType.toLowerCase() !== 'bearer' || !token) {
-    return c.json({ Code: 0, Message: 'Invalid Authorization header' }, 401)
+    return c.json({ Code: 0, Message: 'Unauthorized: Invalid Authorization header' }, 401)
   }
 
-  const user = await getUser(c.env.METADB, token)
+  try {
+    const user = await getUser(c.env.USERS, token)
 
-  if (!user) {
-    console.error('Middleware: Invalid token or user not found')
-    return c.json({ Code: 0, Message: 'Unauthorized' }, 401)
+    if (!user) {
+      console.error('Middleware: Invalid token or user not found')
+      return c.json({ Code: 0, Message: 'Unauthorized: Invalid token' }, 401)
+    }
+
+    c.set('user', user)
+    await next()
+  } catch (error) {
+    console.error('Error in authentication middleware:', error)
+    return c.json({ Code: 0, Message: 'Internal Server Error' }, 500)
   }
-
-  c.set('user', user)
-  
-  await next()
 }
 
 // Apply authentication middleware to all routes except /d/:fileId and /api/pic
@@ -44,12 +48,7 @@ app.use('*', async (c, next) => {
   if (c.req.path.startsWith('/d/') || c.req.path === '/api/pic') {
     await next()
   } else {
-    try {
-      await authMiddleware(c, next)
-    } catch (error) {
-      console.error('Error in authentication middleware:', error)
-      return c.json({ Code: 0, Message: 'Internal Server Error' }, 500)
-    }
+    await authMiddleware(c, next)
   }
 })
 
@@ -103,14 +102,17 @@ export default {
 }
 
 export interface Env {
-  BOT_TOKEN: string
-  CHANNEL_ID: string
-  CHUNK_SIZE: string
-  TASKS: KVNamespace
-  PIC_MAX_SIZE: string
-  METADB: D1Database
+  USERS: KVNamespace;
+  FILES: KVNamespace;
+  FILE_DOWNLOAD_INFO: KVNamespace;
+  TASKS: KVNamespace;
+  BOT_TOKEN: string;
+  CHANNEL_ID: string;
+  CHUNK_SIZE: string;
+  PIC_MAX_SIZE: string;
+  MAX_RETRY_FROM_TG: string;
   ANALYTICS_ENGINE: AnalyticsEngineDataset;
-  MAX_RETRY_FROM_TG: string  // New environment variable
+  // ... any other environment bindings
 }
 
 // Remove the handleRequest function as it's no longer needed

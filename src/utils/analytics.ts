@@ -3,31 +3,31 @@ import { AnalyticsEngineDataset } from '@cloudflare/workers-types';
 export async function writeAnalytics(
   analytics: AnalyticsEngineDataset,
   data: {
-    action: 'upload' | 'download' | 'error',
+    action: 'download' | 'upload' | 'error',
     fileType?: string,
     fileSize?: number,
-    responseTime?: number,
-    errorType?: string,
-    isChunked?: boolean
+    isChunked?: boolean,
+    requestReceivedTime?: number,
+    metadataFetchTime?: number,
+    streamPrepareTime?: number,
+    chunkTimes?: number[],
+    totalTime?: number,
+    errorType?: string
   }
 ) {
-  if (!analytics) {
-    console.error('Analytics engine is not defined');
-    return;
-  }
+  const { action, fileType, fileSize, isChunked, requestReceivedTime, metadataFetchTime, streamPrepareTime, chunkTimes, totalTime, errorType } = data;
 
-  const { action, fileType, fileSize, responseTime, errorType, isChunked } = data;
-  
+  const blobs = [action, fileType, isChunked ? 'chunked' : 'single', errorType].filter(Boolean) as string[];
+  const doubles = [fileSize, requestReceivedTime, metadataFetchTime, streamPrepareTime, totalTime].filter((v): v is number => typeof v === 'number');
+  const indexes = [Date.now()];  // Current timestamp as index
+
   try {
-    await analytics.writeDataPoint({
-      blobs: [action, fileType, errorType, isChunked ? 'chunked' : 'single'].filter(Boolean) as string[],
-      doubles: [fileSize, responseTime].filter((v): v is number => typeof v === 'number'),
-      indexes: [new Date().getTime()], // Add timestamp for time-based analysis
+    analytics.writeDataPoint({
+      blobs,
+      doubles,
+      indexes
     });
-    console.log('Analytics data point written successfully');
   } catch (error) {
-    console.error('Error writing analytics data point:', error);
-    // Re-throw the error so it can be caught in the calling function
-    throw error;
+    console.error('Error writing analytics:', error);
   }
 }

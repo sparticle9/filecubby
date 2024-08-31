@@ -8,3 +8,8 @@ export function generateFileId(): string {
   const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_';
   return Array.from({length: 8}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }
+
+export function generateUserId(): string {
+  const characters = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  return Array.from({length: 4}, () => characters[Math.floor(Math.random() * characters.length)]).join('');
+}
