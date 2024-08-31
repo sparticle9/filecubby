@@ -1,0 +1,9 @@
+general:
+  baseUrl: https://tgpan.example.com/api/
+  token: <your token>
+  timeout: 10
+  MAX_CHUNK_SIZE: 20 # in MB
+
+image:
+  # specific instructions for image upload, will improve over time
+  MAX_IMAGE_SIZE: 10 # in MB

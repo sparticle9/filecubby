@@ -26,6 +26,12 @@ share/python-wheels/
 MANIFEST
 .pytest_cache/
 
+# Go
+go.sum
+go.mod
+cli/dist
+cli/config.yml
+
 # Virtual Environment
 venv/
 env/

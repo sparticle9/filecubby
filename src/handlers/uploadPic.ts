@@ -6,7 +6,14 @@ import { handleFileUpload } from '../utils/uploadUtils'
 
 export async function uploadPic(c: Context<{ Bindings: Env }>) {
   try {
-    const token = c.req.query('token');
+    let token = c.req.query('token');
+    if (!token) {
+      const authHeader = c.req.header('Authorization');
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.slice(7);
+      }
+    }
+
     if (!token) {
       console.log('uploadPic: Token is missing');
       return c.json({ Code: 0, Message: 'Token is required' }, 400);
@@ -30,7 +37,7 @@ export async function uploadPic(c: Context<{ Bindings: Env }>) {
     const fileType = await determineFileType(file);
     console.log(`uploadPic: File type determined - ${fileType}`);
 
-    const maxSize = parseInt(c.env.PIC_MAX_SIZE, 10);
+    const maxSize = parseInt(c.env.MAX_IMAGE_SIZE, 10);
 
     return handleFileUpload(c, user, file, fileType, null, maxSize);
   } catch (error) {

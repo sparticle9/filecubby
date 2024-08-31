@@ -74,9 +74,9 @@ export async function uploadFile(
   return { fileId, url, fullUrl, filename: fileName, chunkId };
 }
 
-export async function fetchChunkUrl(botToken: string, chunkId: string): Promise<string> {
+export async function fetchChunkUrl(botToken: string, chunkId: string, timeout: number): Promise<string> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
 
   try {
     const response = await fetch(`https://api.telegram.org/bot${botToken}/getFile?file_id=${chunkId}`, {
@@ -90,15 +90,18 @@ export async function fetchChunkUrl(botToken: string, chunkId: string): Promise<
 
     return `https://api.telegram.org/file/bot${botToken}/${result.result.file_path}`;
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(timeoutId);
   }
 }
 
-export async function fetchChunkUrlWithRetry(botToken: string, chunkId: string, maxRetries = 5): Promise<string> {
-  console.log(`Fetching chunk URL for chunk ID: ${chunkId}, max retries: ${maxRetries}`);
+export async function fetchChunkUrlWithRetry(botToken: string, chunkId: string, env: Env): Promise<string> {
+  console.log(`Fetching chunk URL for chunk ID: ${chunkId}`);
+  const maxRetries = env.CACHE_CHUNK_URL_MAX_RETRY;
+  const timeout = env.CACHE_CHUNK_URL_TIMEOUT;
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const url = await fetchChunkUrl(botToken, chunkId);  // Changed from fetchChunkUrlWithRetry to fetchChunkUrl
+      const url = await fetchChunkUrl(botToken, chunkId, timeout);
       console.log(`Chunk URL fetched successfully for chunk ID: ${chunkId}`);
       return url;
     } catch (error) {
@@ -124,7 +127,7 @@ export async function preCacheChunkUrls(env: Env, fileId: string, chunkIndices?:
       return;
     }
 
-    const ttl = parseInt(env.TG_FILE_URL_TTL || '3600', 10) || 3600;
+    const ttl = parseInt(env.CACHE_CHUNK_TTL, 10) * 3600 || 259200; // Default to 3 days in seconds
 
     const indicesToCache = chunkIndices || metadata.chunkIds.map((_, index) => index);
 
@@ -132,7 +135,7 @@ export async function preCacheChunkUrls(env: Env, fileId: string, chunkIndices?:
       const chunkId = metadata.chunkIds[index];
       if (!chunkId) return;
       try {
-        const url = await fetchChunkUrlWithRetry(env.BOT_TOKEN, chunkId);
+        const url = await fetchChunkUrlWithRetry(env.BOT_TOKEN, chunkId, env);
         await cacheChunkUrl(env.FILE_DOWNLOAD_INFO, fileId, index, url, ttl);
         console.log(`Pre-cached URL for file ${fileId}, chunk ${index}`);
       } catch (error) {

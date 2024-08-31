@@ -30,7 +30,7 @@ export async function uploadHandler(c: Context<{ Bindings: Env, Variables: { use
     }
 
     const fileType = file ? await determineFileType(file) : 'application/octet-stream'
-    const maxSize = parseInt(c.env.CHUNK_SIZE, 10);
+    const maxSize = parseInt(c.env.MAX_CHUNK_SIZE, 10);
 
     if (isChunk) {
       if (!sessionId) {

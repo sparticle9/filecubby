@@ -108,9 +108,11 @@ export interface Env {
   TASKS: KVNamespace;
   BOT_TOKEN: string;
   CHANNEL_ID: string;
-  CHUNK_SIZE: string;
-  PIC_MAX_SIZE: string;
-  MAX_RETRY_FROM_TG: string;
+  MAX_CHUNK_SIZE: number;
+  MAX_IMAGE_SIZE: number;
+  CACHE_CHUNK_URL_MAX_RETRY: number;
+  CACHE_CHUNK_URL_TIMEOUT: number;
+  CACHE_CHUNK_TTL: number;
   ANALYTICS_ENGINE: AnalyticsEngineDataset;
   // ... any other environment bindings
 }

@@ -27,10 +27,11 @@ id = "00000000000000000000000000000000"
 [vars]
 BOT_TOKEN = "<telegram-bot-token>"
 CHANNEL_ID = "489042798"
-CHUNK_SIZE = "20971520"  # 20MB in bytes (20 * 1024 * 1024)
-PIC_MAX_SIZE = "31457280"  # 30MB in bytes, configurable
-MAX_RETRY_FROM_TG = "3"  # New environment variable
-TG_FILE_URL_TTL = "3600"  # 1 hour in seconds
+MAX_CHUNK_SIZE = 20971520  # 20MB in bytes (20 * 1024 * 1024)
+MAX_IMAGE_SIZE = 31457280  # 30MB in bytes, configurable
+CACHE_CHUNK_URL_MAX_RETRY = 5
+CACHE_CHUNK_URL_TIMEOUT = 10000  # 10 seconds in milliseconds
+CACHE_CHUNK_TTL = 72  # 3 days in hours
 
 [triggers]
 crons = ["0 0 * * *"] # Run daily at midnight

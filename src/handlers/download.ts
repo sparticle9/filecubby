@@ -46,7 +46,7 @@ export async function downloadFile(c: Context<{ Bindings: Env }>) {
     const headersPrepTime = Date.now() - headersPrepStartTime;
     console.log(`Time to prepare headers: ${headersPrepTime}ms`);
 
-    const ttl = parseInt(c.env.TG_FILE_URL_TTL || '3600', 10) || 3600;
+    const ttl = parseInt(c.env.CACHE_CHUNK_TTL, 10) * 3600 || 259200; // Default to 3 days in seconds
 
     let totalChunkUrlTime = 0;
     let totalFetchTime = 0;
