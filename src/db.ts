@@ -10,60 +10,111 @@ export interface User {
 export interface FileMetadata {
   id: string;
   userId: string;
-  filename: string;
+  name: string;  // Changed from filename
   size: number;
   chunks: number;
   chunkIds: string[];
   expiresAt: string | null;
-  fileType: string;
+  type: string;  // Changed from fileType
   uploadedAt: string;
-  status: 'uploading' | 'completed';
+  // status field removed
 }
 
 // Validation function for FileMetadata
-export function validateFileMetadata(metadata: FileMetadata, isInitializing: boolean = false): boolean {
-  return (
-    typeof metadata.id === 'string' && metadata.id.length > 0 &&
-    typeof metadata.userId === 'string' && metadata.userId.length > 0 &&
-    typeof metadata.filename === 'string' && metadata.filename.length > 0 &&
-    typeof metadata.size === 'number' && metadata.size >= 0 &&
-    typeof metadata.chunks === 'number' && metadata.chunks > 0 &&
-    Array.isArray(metadata.chunkIds) &&
-    (isInitializing || metadata.chunkIds.every(id => typeof id === 'string' || id === null)) &&
-    (metadata.expiresAt === null || (typeof metadata.expiresAt === 'string' && !isNaN(Date.parse(metadata.expiresAt)))) &&
-    typeof metadata.fileType === 'string' && metadata.fileType.length > 0 &&
-    typeof metadata.uploadedAt === 'string' && !isNaN(Date.parse(metadata.uploadedAt)) &&
-    (metadata.status === 'uploading' || metadata.status === 'completed')
-  );
+export function validateFileMetadata(metadata: FileMetadata, isInitializing: boolean = false): { isValid: boolean; error?: string } {
+  if (typeof metadata.id !== 'string' || metadata.id.length === 0) {
+    return { isValid: false, error: 'Invalid id' };
+  }
+  if (typeof metadata.userId !== 'string' || metadata.userId.length === 0) {
+    return { isValid: false, error: 'Invalid userId' };
+  }
+  if (typeof metadata.name !== 'string' || metadata.name.length === 0) {
+    return { isValid: false, error: 'Invalid name' };
+  }
+  if (typeof metadata.size !== 'number' || metadata.size < 0) {
+    return { isValid: false, error: 'Invalid size' };
+  }
+  if (typeof metadata.chunks !== 'number' || metadata.chunks <= 0) {
+    return { isValid: false, error: 'Invalid chunks' };
+  }
+  if (!Array.isArray(metadata.chunkIds) || metadata.chunkIds.length !== metadata.chunks) {
+    return { isValid: false, error: 'Invalid chunkIds array' };
+  }
+  // Allow null values in chunkIds during initialization and chunk uploads
+  if (!isInitializing && !metadata.chunkIds.every(id => typeof id === 'string' || id === null)) {
+    return { isValid: false, error: 'Invalid chunkIds' };
+  }
+  if (metadata.expiresAt !== null && (typeof metadata.expiresAt !== 'string' || isNaN(Date.parse(metadata.expiresAt)))) {
+    return { isValid: false, error: 'Invalid expiresAt' };
+  }
+  if (typeof metadata.type !== 'string' || metadata.type.length === 0) {
+    return { isValid: false, error: 'Invalid type' };
+  }
+  if (typeof metadata.uploadedAt !== 'string' || isNaN(Date.parse(metadata.uploadedAt))) {
+    return { isValid: false, error: 'Invalid uploadedAt' };
+  }
+
+  return { isValid: true };
 }
 
 export async function saveFileMetadata(files: KVNamespace, key: string, metadata: FileMetadata, isInitializing: boolean = false) {
-  if (!validateFileMetadata(metadata, isInitializing)) {
+  console.log(`Attempting to save metadata for key ${key}:`, JSON.stringify(metadata, null, 2));
+  const validationResult = validateFileMetadata(metadata, isInitializing);
+  if (!validationResult.isValid) {
     console.error('Invalid file metadata:', JSON.stringify(metadata, null, 2));
-    throw new Error('Invalid file metadata');
+    throw new Error(`Invalid file metadata: ${validationResult.error}`);
   }
-  await files.put(key, JSON.stringify(metadata));
+  const metadataString = JSON.stringify(metadata);
+  await files.put(key, metadataString);
+  console.log(`Metadata saved successfully for key ${key}`);
 }
 
 export async function getFileMetadata(files: KVNamespace, key: string): Promise<FileMetadata | null> {
   console.log(`Attempting to retrieve metadata for key: ${key}`);
-  const metadata = await files.get(key, 'json');
-  if (!metadata) {
+  const rawMetadata = await files.get(key);
+  
+  if (rawMetadata === null) {
     console.log(`No metadata found for key: ${key}`);
     return null;
   }
-  console.log(`Retrieved metadata for key ${key}:`, JSON.stringify(metadata, null, 2));
-  return metadata as FileMetadata;
+
+  if (typeof rawMetadata !== 'string') {
+    console.error(`Unexpected metadata type for key ${key}:`, typeof rawMetadata);
+    return null;
+  }
+
+  try {
+    const metadata = JSON.parse(rawMetadata);
+    console.log(`Retrieved metadata for key ${key}:`, JSON.stringify(metadata, null, 2));
+    return metadata as FileMetadata;
+  } catch (error) {
+    console.error(`Error parsing metadata for key ${key}:`, error);
+    return null;
+  }
 }
 
-export async function updateFileMetadata(files: KVNamespace, key: string, metadata: FileMetadata) {
-  console.log(`Attempting to update metadata for key ${key}:`, JSON.stringify(metadata, null, 2));
-  if (!validateFileMetadata(metadata)) {
-    console.error('Invalid file metadata:', JSON.stringify(metadata, null, 2));
-    throw new Error('Invalid file metadata');
+export async function updateFileMetadata(files: KVNamespace, key: string, updateFn: (metadata: FileMetadata) => FileMetadata): Promise<FileMetadata> {
+  console.log(`Attempting to update metadata for key ${key}`);
+  const existingMetadata = await getFileMetadata(files, key);
+  
+  if (!existingMetadata) {
+    console.error(`No existing metadata found for key ${key}`);
+    throw new Error('Metadata not found');
   }
-  await files.put(key, JSON.stringify(metadata));
-  console.log(`Metadata updated successfully for key ${key}`);
+
+  const updatedMetadata = updateFn(existingMetadata);
+  
+  const validationResult = validateFileMetadata(updatedMetadata);
+  if (!validationResult.isValid) {
+    console.error('Invalid updated file metadata:', JSON.stringify(updatedMetadata, null, 2));
+    throw new Error(`Invalid file metadata: ${validationResult.error}`);
+  }
+
+  const metadataString = JSON.stringify(updatedMetadata);
+  await files.put(key, metadataString);
+  console.log(`Metadata updated successfully for key ${key}:`, metadataString);
+  
+  return updatedMetadata;
 }
 
 export async function deleteFileMetadata(files: KVNamespace, fileId: string): Promise<void> {
@@ -90,34 +141,6 @@ export async function archiveFile(files: KVNamespace, file: FileMetadata) {
     ...file,
     deletedAt: new Date().toISOString()
   }));
-}
-
-export async function cacheChunkUrl(fileDownloadInfo: KVNamespace, fileId: string, chunkIndex: number, url: string, ttl: number): Promise<void> {
-  console.log(`Caching chunk URL for file ${fileId}, chunk ${chunkIndex} with TTL: ${ttl}`);
-  const expiresAt = Date.now() + ttl * 1000;
-  await fileDownloadInfo.put(`file:${fileId}:chunk:${chunkIndex}:url`, JSON.stringify({ url, expiresAt }), { expirationTtl: ttl });
-}
-
-export async function getCachedChunkUrl(fileDownloadInfo: KVNamespace, fileId: string, chunkIndex: number): Promise<string | null> {
-  const cachedData = await fileDownloadInfo.get(`file:${fileId}:chunk:${chunkIndex}:url`);
-  if (!cachedData) return null;
-
-  try {
-    const parsed = JSON.parse(cachedData);
-    if (typeof parsed === 'object' && parsed.url && parsed.expiresAt) {
-      if (parsed.expiresAt > Date.now()) {
-        return parsed.url;
-      }
-    }
-  } catch (error) {
-    console.error(`Error parsing cached URL data for file ${fileId}, chunk ${chunkIndex}:`, error);
-    // If parsing fails, return the raw cached data if it's a string
-    if (typeof cachedData === 'string') {
-      return cachedData;
-    }
-  }
-
-  return null;
 }
 
 export async function saveUser(users: KVNamespace, user: User): Promise<void> {

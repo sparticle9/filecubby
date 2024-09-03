@@ -57,6 +57,20 @@ tgpan is a serverless file storage system that leverages Telegram's infrastructu
 
 ## Usage
 
+### Configuration
+
+- `BOT_TOKEN`: The token for your Telegram bot
+- `CHAT_ID`: The ID of the Telegram channel or group where files will be stored
+Chat ID types:
+For private chats, groups, and supergroups, the chat ID is a number (can be negative for groups).
+For channels, you can use the channel's username (prefixed with '@') instead of a numeric ID.
+
+- `MAX_CHUNK_SIZE`: The maximum size of a single file chunk (default: 20MB)
+- `MAX_IMAGE_SIZE`: The maximum size of an image (default: 30MB)
+- `CACHE_CHUNK_URL_MAX_RETRY`: The maximum number of retries to fetch a chunk URL (default: 5)
+- `CACHE_CHUNK_URL_TIMEOUT`: The timeout for fetching a chunk URL in milliseconds (default: 5000)
+- `CACHE_CHUNK_TTL`: The time-to-live for cached chunk URLs in hours (default: 3)
+
 ### Uploading a File
 
 default no expir

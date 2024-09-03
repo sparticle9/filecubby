@@ -2,10 +2,7 @@ name = "tgpan"
 main = "src/index.ts"
 compatibility_date = "2023-05-18"
 
-[[d1_databases]]
-binding = "METADB"
-database_name = "tgpan"
-database_id = "8511e92a-cf26-4c0a-bf8f-09587b93f9e7"
+compatibility_flags = ["brotli_content_encoding"]
 
 # KV namespaces section
 [[kv_namespaces]]
@@ -25,13 +22,16 @@ binding = "FILE_DOWNLOAD_INFO"
 id = "00000000000000000000000000000000"
 
 [vars]
+TG_USER_AGENT = "Mozilla/5.0 (Linux; Android 13; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36"
 BOT_TOKEN = "<telegram-bot-token>"
-CHANNEL_ID = "489042798"
+CHAT_ID = "-4598851463"
 MAX_CHUNK_SIZE = 20971520  # 20MB in bytes (20 * 1024 * 1024)
-MAX_IMAGE_SIZE = 31457280  # 30MB in bytes, configurable
+MAX_IMAGE_SIZE = 10457280  # 30MB in bytes, configurable
 CACHE_CHUNK_URL_MAX_RETRY = 5
-CACHE_CHUNK_URL_TIMEOUT = 10000  # 10 seconds in milliseconds
-CACHE_CHUNK_TTL = 72  # 3 days in hours
+CACHE_CHUNK_URL_TIMEOUT = 5000  # 10 seconds in milliseconds
+CACHE_CHUNK_EDGE_ON_UPLOAD = 'false'
+EDGE_CACHE_CHUNK_TTL = 24  # in hours
+EDGE_CACHE_MAX_CHUNK_SIZE = 50
 
 [triggers]
 crons = ["0 0 * * *"] # Run daily at midnight
@@ -39,3 +39,6 @@ crons = ["0 0 * * *"] # Run daily at midnight
 [[analytics_engine_datasets]]
 binding = "ANALYTICS_ENGINE"
 dataset = "tgpan_analytics"
+
+[placement]
+mode = "smart"

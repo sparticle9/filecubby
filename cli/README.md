@@ -43,9 +43,9 @@ tgpan CLI is a command-line interface tool for uploading files and images to the
 
 ## Configuration
 
-Before using the CLI, make sure to set up your `config.yml` file in the same directory as the executable. The file should contain:
+Before using the CLI, make sure to set up your `config.yml` file in the same directory as the executable. `config.yml.example` can be used as a template.
 
-```
+
 ## Features
 
 - File upload support

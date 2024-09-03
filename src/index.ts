@@ -1,20 +1,20 @@
 import { Hono } from 'hono'
-import { uploadHandler } from './handlers/upload'
-import { downloadFile } from './handlers/download'
+import { uploadHandler, finalizeUploadHandler, getUploadStatusHandler } from './handlers/upload'
+import { handleFileDownload, handlePartialDownload } from './handlers/download'
 import { deleteExpiredFiles } from './handlers/expiry'
 import { uploadPic } from './handlers/uploadPic'
 import { deleteFile } from './handlers/deleteFile'
 import { handleBotCommand } from './handlers/botCommand'
-import { D1Database } from '@cloudflare/workers-types'
 import { getUser, User } from './db'
 import { handleUserManagement } from './handlers/userManagement'
 import { handleExpiryTask } from './expiryTask'
-import { writeAnalytics } from './utils/analytics';
+import { writeAnalytics } from './utils/analytics'
+import { clearCache, getCacheStatus, getCacheCount } from './handlers/cache'
 
 const app = new Hono<{ Bindings: Env, Variables: { user: User } }>()
 
 // Authentication middleware
-const authMiddleware = async (c: Context<{ Bindings: Env }>, next: () => Promise<void>) => {
+const authMiddleware = async (c, next) => {
   const authHeader = c.req.header('Authorization')
   
   if (!authHeader) {
@@ -43,6 +43,27 @@ const authMiddleware = async (c: Context<{ Bindings: Env }>, next: () => Promise
   }
 }
 
+// Admin authentication middleware
+const adminAuthMiddleware = async (c, next) => {
+  const authHeader = c.req.header('Authorization')
+  
+  if (!authHeader) {
+    return c.json({ Code: 0, Message: 'Unauthorized: No Authorization header' }, 401)
+  }
+
+  const [authType, token] = authHeader.split(' ')
+
+  if (authType.toLowerCase() !== 'bearer' || !token) {
+    return c.json({ Code: 0, Message: 'Unauthorized: Invalid Authorization header' }, 401)
+  }
+
+  if (token !== c.env.ADMIN_TOKEN) {
+    return c.json({ Code: 0, Message: 'Unauthorized: Invalid admin token' }, 401)
+  }
+
+  await next()
+}
+
 // Apply authentication middleware to all routes except /d/:fileId and /api/pic
 app.use('*', async (c, next) => {
   if (c.req.path.startsWith('/d/') || c.req.path === '/api/pic') {
@@ -52,33 +73,23 @@ app.use('*', async (c, next) => {
   }
 })
 
-// Modify the upload handler
-app.post('/api/upload', async (c) => {
-  const result = await uploadHandler(c);
-  return result;
-});
+// Cache management routes
+app.post('/api/cache/clear', adminAuthMiddleware, clearCache)
+app.get('/api/cache/status', adminAuthMiddleware, getCacheStatus)
+app.get('/api/cache/count', getCacheCount)
 
-// Modify the download handler
-app.get('/d/:fileId', async (c) => {
-  return await downloadFile(c);
-});
+// File upload routes
+app.post('/api/upload', uploadHandler)
+app.post('/api/upload/finalize/:fileId', finalizeUploadHandler)
+app.get('/api/upload/status/:fileId', getUploadStatusHandler)
 
-// Add error handling middleware
-app.onError((err, c) => {
-  console.error('Unhandled error:', err);
-  return c.json({ Code: 0, Message: 'An unexpected error occurred' }, 500);
-});
+// File download routes
+app.get('/d/:fileId', handleFileDownload)
+app.get('/d/:fileId/partial', handlePartialDownload)
 
+// Other routes
 app.post('/api/delete-expired', deleteExpiredFiles)
-app.post('/api/pic', async (c) => {
-  try {
-    const result = await uploadPic(c)
-    return result
-  } catch (error) {
-    console.error('Error in /api/pic handler:', error)
-    return c.json({ Code: 0, Message: 'Internal server error' }, 500)
-  }
-})
+app.post('/api/pic', uploadPic)
 app.post('/api/del', deleteFile)
 app.post('/bot-webhook', handleBotCommand)
 
@@ -93,6 +104,12 @@ app.get('/test', (c) => {
   console.log('Test route hit')
   return c.text('Test successful')
 })
+
+// Add error handling middleware
+app.onError((err, c) => {
+  console.error('Unhandled error:', err);
+  return c.json({ Code: 0, Message: 'An unexpected error occurred' }, 500);
+});
 
 export default {
   fetch: app.fetch,
@@ -112,9 +129,11 @@ export interface Env {
   MAX_IMAGE_SIZE: number;
   CACHE_CHUNK_URL_MAX_RETRY: number;
   CACHE_CHUNK_URL_TIMEOUT: number;
-  CACHE_CHUNK_TTL: number;
+  EDGE_CACHE_CHUNK_TTL: number;
+  EDGE_CACHE_MAX_CHUNK_SIZE: number;
   ANALYTICS_ENGINE: AnalyticsEngineDataset;
+  TG_USER_AGENT: string;
+  ADMIN_TOKEN: string;
+  CACHE_CHUNK_EDGE_ON_UPLOAD: string;
   // ... any other environment bindings
 }
-
-// Remove the handleRequest function as it's no longer needed

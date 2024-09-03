@@ -14,6 +14,7 @@
   "license": "MIT",
   "dependencies": {
     "hono": "^4.5.9",
+    "file-type": "^19.4.1",
     "exponential-backoff": "^3.1.1"
   },
   "devDependencies": {
