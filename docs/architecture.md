@@ -217,11 +217,13 @@ block on edge chunk-body caching. Downloads can still cache fetched chunks.
 
 ## Telegram Recovery Records
 
-`TELEGRAM_ORGANIZATION_MODE` defaults to `off`.
+`TELEGRAM_ORGANIZATION_MODE` defaults to `caption` in this repo's
+`wrangler.toml`.
 
 - `caption`: object chunks get short, marker-prefixed captions.
 - `manifest`: Filecubby sends one marker-prefixed recovery manifest message
   after the object chunks have been uploaded.
+- `off`: organization stays only in Cloudflare KV.
 
 `FILECUBBY_MARKER` defaults to `fc`. Captions and manifests include
 `namespace: default` when needed for repair/import.

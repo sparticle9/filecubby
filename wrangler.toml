@@ -34,7 +34,7 @@ CACHE_CHUNK_URL_TIMEOUT = 5000  # 5 seconds in milliseconds
 CACHE_CHUNK_EDGE_ON_UPLOAD = 'false'
 EDGE_CACHE_CHUNK_TTL = 24  # in hours
 EDGE_CACHE_MAX_CHUNK_SIZE = 50
-TELEGRAM_ORGANIZATION_MODE = "manifest" # off, caption, or manifest
+TELEGRAM_ORGANIZATION_MODE = "caption" # off, caption, or manifest
 FILECUBBY_MARKER = "fc"
 
 [triggers]

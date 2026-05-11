@@ -39,8 +39,10 @@ bytes for HTTP download or media streaming.
 
 ## Telegram Organization Records
 
-By default, Filecubby keeps organization metadata only in Cloudflare KV. To also
-leave a recovery trail in Telegram, set:
+By default, this repo's Worker config uses `caption`, so chunk documents get a
+short readable caption but uploads do not send a second recovery manifest
+message. To keep organization metadata only in Cloudflare KV, set
+`TELEGRAM_ORGANIZATION_MODE = "off"`.
 
 ```toml
 TELEGRAM_ORGANIZATION_MODE = "caption"  # off, caption, or manifest
@@ -49,8 +51,8 @@ FILECUBBY_MARKER = "fc"
 
 `caption` adds short marker-prefixed captions to chunk documents.
 `manifest` additionally sends one recovery text message per logical object after
-the chunk documents are uploaded. The marker is customizable so forks can use
-their own namespace.
+the chunk documents are uploaded, so leave it opt-in. The marker is customizable
+so forks can use their own namespace.
 
 Repair/import is intentionally simple and uses Telegram `getUpdates`, so it can
 only import messages the Bot API can currently see:
