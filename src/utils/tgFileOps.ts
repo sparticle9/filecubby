@@ -106,8 +106,14 @@ export async function uploadToTelegramDocument(
     throw new Error(`Failed to upload to Telegram: ${result.description}`)
   }
 
+  const chunkId = extractTelegramFileId(result.result);
+  if (!chunkId) {
+    console.error('Telegram upload response did not include a supported file payload:', JSON.stringify(result.result, null, 2));
+    throw new Error(`Telegram upload succeeded but no file_id was found in the response payload`);
+  }
+
   return {
-    chunkId: result.result.document.file_id,
+    chunkId,
     messageId: result.result.message_id,
   };
 }
@@ -164,6 +170,37 @@ function compactToken(value: string): string {
     .replace(/-+/g, '-')
     .slice(0, 80);
   return compact || 'root';
+}
+
+function extractTelegramFileId(message: any): string | undefined {
+  if (!message || typeof message !== 'object') {
+    return undefined;
+  }
+
+  const directMedia = [
+    message.document,
+    message.audio,
+    message.video,
+    message.voice,
+    message.animation,
+    message.video_note,
+    message.sticker,
+  ];
+
+  for (const media of directMedia) {
+    if (media && typeof media.file_id === 'string' && media.file_id.length > 0) {
+      return media.file_id;
+    }
+  }
+
+  if (Array.isArray(message.photo) && message.photo.length > 0) {
+    const largest = message.photo[message.photo.length - 1];
+    if (largest && typeof largest.file_id === 'string' && largest.file_id.length > 0) {
+      return largest.file_id;
+    }
+  }
+
+  return undefined;
 }
 
 /**
