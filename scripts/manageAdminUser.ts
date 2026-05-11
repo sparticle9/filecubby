@@ -31,8 +31,7 @@ async function createOrUpdateAdminUser(db: D1Database, generateSql: boolean = fa
     await createUser(db, adminUser)
   }
 
-  console.log(`Admin user created/updated with ID: ${adminUser.id} and token: ${adminToken}`)
-  console.log('Please store this token securely. It will not be shown again.')
+  console.log(`Admin user created/updated with ID: ${adminUser.id}. Token value redacted.`)
 }
 
 async function checkAdminUser(db: D1Database): Promise<void> {

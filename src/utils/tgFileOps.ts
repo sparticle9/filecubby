@@ -1,27 +1,84 @@
 import { Env } from '../index'
-import { getFileMetadata } from '../db'
+import { ObjectMetadata, getObjectMetadata } from '../db'
 import { cacheChunk, getCachedChunk } from './cache'
+import { filecubbyMarker, telegramOrganizationMode } from './metadata'
 
-const TG_USER_AGENT = (env: Env) => env.TG_USER_AGENT || 'TGPan-Server/1.0';
+const TG_USER_AGENT = (env: Env) => env.TG_USER_AGENT || 'Filecubby-Server/1.0';
 
 /**
  * Uploads a file or chunk to Telegram.
- * This function sends a file or chunk to the Telegram API and returns the file ID.
+ * This function sends a file or chunk to the Telegram API and returns the object ID.
  * @param env - The environment object containing configuration and bindings.
  * @param botToken - The Telegram bot token.
  * @param chatId - The Telegram chat ID.
  * @param file - The file or chunk to upload.
- * @param fileName - The name of the file.
+ * @param objectName - The name of the object.
  * @param mimeType - The MIME type of the file.
- * @returns A promise that resolves to the file ID.
+ * @returns A promise that resolves to the object ID.
  */
-export async function uploadToTelegramDocument(env: Env, botToken: string, chatId: string, file: File | Blob, fileName: string, mimeType: string): Promise<string> {
-  console.log(`Uploading file to Telegram: ${fileName}, size: ${file instanceof File ? file.size : 'unknown'} bytes, type: ${mimeType}`);
+export interface TelegramDocumentUploadResult {
+  chunkId: string;
+  messageId?: number;
+}
+
+export async function sendTelegramManifest(env: Env, metadata: ObjectMetadata): Promise<number | undefined> {
+  if (telegramOrganizationMode(env) !== 'manifest') return undefined;
+
+  const text = [
+    telegramRecoveryOneLiner(env, metadata),
+    'manifest: recovery record',
+    `namespace: ${metadata.namespaceId}`,
+    `name: ${metadata.name}`,
+    `path: ${metadata.path || '/'}`,
+    ...(metadata.tags?.length ? [`tags: ${metadata.tags.join(', ')}`] : []),
+    `id: ${metadata.id}`,
+    `size: ${formatBytes(metadata.size)}`,
+    `chunks: ${metadata.chunks}`,
+  ].join('\n');
+  const response = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': TG_USER_AGENT(env),
+    },
+    body: JSON.stringify({
+      chat_id: env.CHAT_ID,
+      text,
+      disable_web_page_preview: true,
+    }),
+  });
+  const result: any = await response.json();
+  if (!result.ok) {
+    throw new Error(`Failed to send Telegram manifest: ${result.description}`);
+  }
+  return result.result?.message_id;
+}
+
+export function shouldSendTelegramManifest(env: Env): boolean {
+  return telegramOrganizationMode(env) === 'manifest';
+}
+
+export async function uploadToTelegramDocument(
+  env: Env,
+  botToken: string,
+  chatId: string,
+  file: File | Blob,
+  objectName: string,
+  mimeType: string,
+  options: { caption?: string; replyToMessageId?: number } = {}
+): Promise<TelegramDocumentUploadResult> {
+  console.log(`Uploading object to Telegram: ${objectName}, size: ${file instanceof File ? file.size : 'unknown'} bytes, type: ${mimeType}`);
   const formData = new FormData()
   formData.append('chat_id', chatId)
+  if (options.caption) {
+    formData.append('caption', options.caption);
+  }
+  if (options.replyToMessageId) {
+    formData.append('reply_to_message_id', String(options.replyToMessageId));
+    formData.append('allow_sending_without_reply', 'true');
+  }
   
-  // Use the provided fileName instead of generating one
-  formData.append('document', file, fileName);
+  formData.append('document', file, objectName);
 
   console.log('uploadToTelegramDocument: Sending request to Telegram API')
   const response = await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, {
@@ -49,7 +106,64 @@ export async function uploadToTelegramDocument(env: Env, botToken: string, chatI
     throw new Error(`Failed to upload to Telegram: ${result.description}`)
   }
 
-  return result.result.document.file_id;
+  return {
+    chunkId: result.result.document.file_id,
+    messageId: result.result.message_id,
+  };
+}
+
+export function buildChunkCaption(env: Env, metadata: ObjectMetadata, chunkIndex: number): string | undefined {
+  const mode = telegramOrganizationMode(env);
+  if (mode === 'off') return undefined;
+
+  const caption = [
+    telegramOneLiner(env, metadata, `chunk-${chunkIndex + 1}-of-${metadata.chunks}`),
+    `path: ${metadata.path || '/'}`,
+    ...(metadata.tags?.length ? [`tags: ${metadata.tags.join(', ')}`] : []),
+    `id: ${metadata.id}`,
+  ].join('\n');
+  return caption.length <= 1024 ? caption : [
+    telegramOneLiner(env, metadata, `chunk-${chunkIndex + 1}-of-${metadata.chunks}`),
+    `id: ${metadata.id}`,
+  ].join('\n');
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return 'unknown';
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KiB', 'MiB', 'GiB'];
+  let value = bytes / 1024;
+  for (const unit of units) {
+    if (value < 1024) return `${value.toFixed(value >= 10 ? 1 : 2)} ${unit}`;
+    value /= 1024;
+  }
+  return `${value.toFixed(2)} TiB`;
+}
+
+function telegramOneLiner(env: Env, metadata: ObjectMetadata, suffix: string): string {
+  const tags = metadata.tags?.length ? metadata.tags.join('+') : 'untagged';
+  const path = compactToken(metadata.path || '/');
+  const name = compactToken(metadata.name);
+  return `${filecubbyMarker(env)} ${metadata.id}.${name}.${path}.${tags}-${suffix}`;
+}
+
+function telegramRecoveryOneLiner(env: Env, metadata: ObjectMetadata): string {
+  const tags = metadata.tags?.length ? metadata.tags.join('+') : 'untagged';
+  const path = compactToken(metadata.path || '/');
+  const name = compactToken(metadata.name);
+  return `${filecubbyMarker(env)} recovery ${metadata.id}.${name}.${path}.${tags}-manifest`;
+}
+
+function compactToken(value: string): string {
+  const compact = value
+    .trim()
+    .replace(/^\/+/, '')
+    .replace(/\/+/g, '~')
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Za-z0-9._~+-]/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 80);
+  return compact || 'root';
 }
 
 /**
@@ -61,8 +175,8 @@ export async function uploadToTelegramDocument(env: Env, botToken: string, chatI
  * @returns A promise that resolves to the URL of the chunk.
  */
 async function fetchChunkUrlFromTelegram(env: Env, botToken: string, chunkId: string): Promise<string> {
-  const initialTimeout = parseInt(env.CACHE_CHUNK_URL_TIMEOUT, 10) || 10000;
-  const maxRetries = parseInt(env.CACHE_CHUNK_URL_MAX_RETRY, 10) || 5;
+  const initialTimeout = parseInt(String(env.CACHE_CHUNK_URL_TIMEOUT), 10) || 10000;
+  const maxRetries = parseInt(String(env.CACHE_CHUNK_URL_MAX_RETRY), 10) || 5;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const currentTimeout = initialTimeout + attempt * 1000;
@@ -87,7 +201,7 @@ async function fetchChunkUrlFromTelegram(env: Env, botToken: string, chunkId: st
         throw new Error(`HTTP error! status: ${response.status}, statusText: ${response.statusText}`);
       }
 
-      const result = await response.json();
+      const result: any = await response.json();
       if (!result.ok || !result.result?.file_path) {
         throw new Error(`Invalid response from Telegram API: ${JSON.stringify(result)}`);
       }
@@ -121,44 +235,44 @@ async function fetchChunkUrlFromTelegram(env: Env, botToken: string, chunkId: st
  * This function checks the cache for the URL of a chunk and fetches it from Telegram if not found.
  * @param env - The environment object containing configuration and bindings.
  * @param botToken - The Telegram bot token.
- * @param fileId - The ID of the file.
+ * @param objectId - The ID of the file.
  * @param chunkIndex - The index of the chunk.
  * @param chunkId - The ID of the chunk.
  * @returns A promise that resolves to the URL of the chunk.
  */
-export async function getChunkUrl(env: Env, botToken: string, fileId: string, chunkIndex: number, chunkId: string): Promise<string> {
-  console.log(`Getting chunk URL for file ${fileId}, chunk ${chunkIndex}`);
+export async function getChunkUrl(env: Env, botToken: string, objectId: string, chunkIndex: number, chunkId: string): Promise<string> {
+  console.log(`Getting chunk URL for object ${objectId}, chunk ${chunkIndex}`);
 
   // Check for cached URL in KV storage
   // if there is a hit, you need to first check if the url is valid, if not, then fetch the url from telegram. you need to do this because the url might be expired.
   // the most efficient way is to make a HEAD request to the url, if it fails, then fetch the url from telegram.
 
-  const cachedUrl = await getCachedChunkUrl(env, fileId, chunkIndex);
+  const cachedUrl = await getCachedChunkUrl(env, objectId, chunkIndex);
   if (cachedUrl) {
-    console.log(`KV cache hit for URL of file ${fileId}, chunk ${chunkIndex}`);
+    console.log(`KV cache hit for URL of object ${objectId}, chunk ${chunkIndex}`);
     const urlValidityResponse = await fetch(cachedUrl, { method: 'HEAD' });
     if (!urlValidityResponse.ok) {
       console.log(`Cached URL is invalid. Fetching new URL from Telegram.`);
       const newUrl = await fetchChunkUrlFromTelegram(env, botToken, chunkId);
-      console.log(`New URL obtained for file ${fileId}, chunk ${chunkIndex}: ${newUrl}`);
-      await cacheChunkUrl(env, fileId, chunkIndex, newUrl);
+      console.log(`New URL obtained for object ${objectId}, chunk ${chunkIndex}: ${newUrl}`);
+      await cacheChunkUrl(env, objectId, chunkIndex, newUrl);
       return newUrl;
     }
     return cachedUrl;
   }
 
-  console.log(`Cache miss for file ${fileId}, chunk ${chunkIndex}. Fetching new URL from Telegram.`);
+  console.log(`Cache miss for object ${objectId}, chunk ${chunkIndex}. Fetching new URL from Telegram.`);
   
   try {
     const newUrl = await fetchChunkUrlFromTelegram(env, botToken, chunkId);
-    console.log(`New URL obtained for file ${fileId}, chunk ${chunkIndex}: ${newUrl}`);
+    console.log(`New URL obtained for object ${objectId}, chunk ${chunkIndex}: ${newUrl}`);
     
     // Cache the new URL in KV storage
-    await cacheChunkUrl(env, fileId, chunkIndex, newUrl);
+    await cacheChunkUrl(env, objectId, chunkIndex, newUrl);
     
     return newUrl;
   } catch (error) {
-    console.error(`Failed to get chunk URL for file ${fileId}, chunk ${chunkIndex}:`, error);
+    console.error(`Failed to get chunk URL for object ${objectId}, chunk ${chunkIndex}:`, error);
     throw error;
   }
 }
@@ -168,32 +282,32 @@ export async function getChunkUrl(env: Env, botToken: string, fileId: string, ch
  * This function checks the cache for the data of a chunk and fetches it from Telegram if not found.
  * @param env - The environment object containing configuration and bindings.
  * @param botToken - The Telegram bot token.
- * @param fileId - The ID of the file.
+ * @param objectId - The ID of the file.
  * @param chunkIndex - The index of the chunk.
  * @returns A promise that resolves to the data of the chunk.
  */
-export async function getChunkData(env: Env, botToken: string, fileId: string, chunkIndex: number): Promise<ArrayBuffer> {
-  console.log(`Getting chunk data for file ${fileId}, chunk ${chunkIndex}`);
+export async function getChunkData(env: Env, botToken: string, objectId: string, chunkIndex: number): Promise<ArrayBuffer> {
+  console.log(`Getting chunk data for object ${objectId}, chunk ${chunkIndex}`);
 
   // First, check if the chunk data is cached in the edge cache
-  const cachedChunk = await getCachedChunk(env, fileId, chunkIndex);
+  const cachedChunk = await getCachedChunk(env, objectId, chunkIndex);
   if (cachedChunk) {
-    console.log(`Edge cache hit for file ${fileId}, chunk ${chunkIndex}`);
-    return await cachedChunk.arrayBuffer();
+    console.log(`Edge cache hit for object ${objectId}, chunk ${chunkIndex}`);
+    return cachedChunk;
   }
 
   // If not in edge cache, get the chunk URL and fetch the data
-  const metadata = await getFileMetadata(env.FILES, `file:${fileId}`);
+  const metadata = await getObjectMetadata(env.FILES, objectId);
   if (!metadata) {
-    throw new Error(`Metadata not found for file ${fileId}`);
+    throw new Error(`Metadata not found for object ${objectId}`);
   }
 
   const chunkId = metadata.chunkIds[chunkIndex];
   if (!chunkId) {
-    throw new Error(`Chunk ID not found for file ${fileId}, chunk ${chunkIndex}`);
+    throw new Error(`Chunk ID not found for object ${objectId}, chunk ${chunkIndex}`);
   }
 
-  const chunkUrl = await getChunkUrl(env, botToken, fileId, chunkIndex, chunkId);
+  const chunkUrl = await getChunkUrl(env, botToken, objectId, chunkIndex, chunkId);
   
   console.log(`Fetching chunk data from URL: ${chunkUrl}`);
   const response = await fetch(chunkUrl, {
@@ -209,7 +323,7 @@ export async function getChunkData(env: Env, botToken: string, fileId: string, c
   const chunkData = await response.arrayBuffer();
 
   // Cache the chunk data
-  await cacheChunk(env, fileId, chunkIndex, chunkData);
+  await cacheChunk(env, objectId, chunkIndex, chunkData, metadata.type);
 
   return chunkData;
 }
@@ -218,28 +332,28 @@ export async function getChunkData(env: Env, botToken: string, fileId: string, c
  * Pre-caches the URL of a single chunk.
  * This function pre-caches the URL of a single chunk to improve performance.
  * @param env - The environment object containing configuration and bindings.
- * @param fileId - The ID of the file.
+ * @param objectId - The ID of the file.
  * @param chunkIndex - The index of the chunk.
  */
-export async function preCacheSingleChunkUrl(env: Env, fileId: string, chunkIndex: number) {
-  console.log(`Pre-caching single chunk URL for file ID: ${fileId}, chunk index: ${chunkIndex}`);
+export async function preCacheSingleChunkUrl(env: Env, objectId: string, chunkIndex: number) {
+  console.log(`Pre-caching single chunk URL for object ID: ${objectId}, chunk index: ${chunkIndex}`);
   try {
-    const metadata = await getFileMetadata(env.FILES, `file:${fileId}`);
+    const metadata = await getObjectMetadata(env.FILES, objectId);
     if (!metadata) {
-      console.error(`Metadata not found for file ${fileId}`);
+      console.error(`Metadata not found for object ${objectId}`);
       return;
     }
 
     const chunkId = metadata.chunkIds[chunkIndex];
     if (!chunkId) {
-      console.error(`Chunk index ${chunkIndex} not found for file ${fileId}`);
+      console.error(`Chunk index ${chunkIndex} not found for object ${objectId}`);
       return;
     }
 
-    await getChunkUrl(env, env.BOT_TOKEN, fileId, chunkIndex, chunkId);
-    console.log(`Pre-cached URL for file ${fileId}, chunk ${chunkIndex}`);
+    await getChunkUrl(env, env.BOT_TOKEN, objectId, chunkIndex, chunkId);
+    console.log(`Pre-cached URL for object ${objectId}, chunk ${chunkIndex}`);
   } catch (error) {
-    console.error(`Error pre-caching URL for file ${fileId}, chunk ${chunkIndex}:`, error);
+    console.error(`Error pre-caching URL for object ${objectId}, chunk ${chunkIndex}:`, error);
   }
 }
 
@@ -247,12 +361,12 @@ export async function preCacheSingleChunkUrl(env: Env, fileId: string, chunkInde
  * Pre-caches the URLs of multiple chunks.
  * This function pre-caches the URLs of multiple chunks to improve performance.
  * @param env - The environment object containing configuration and bindings.
- * @param fileId - The ID of the file.
+ * @param objectId - The ID of the file.
  * @param chunkIndices - The indices of the chunks to pre-cache.
  */
-export async function preCacheMultipleChunkUrls(env: Env, fileId: string, chunkIndices: number[]): Promise<void> {
-  console.log(`Pre-caching multiple chunk URLs for file ID: ${fileId}`);
-  const preCachePromises = chunkIndices.map(index => preCacheSingleChunkUrl(env, fileId, index));
+export async function preCacheMultipleChunkUrls(env: Env, objectId: string, chunkIndices: number[]): Promise<void> {
+  console.log(`Pre-caching multiple chunk URLs for object ID: ${objectId}`);
+  const preCachePromises = chunkIndices.map(index => preCacheSingleChunkUrl(env, objectId, index));
   await Promise.all(preCachePromises);
 }
 
@@ -260,23 +374,23 @@ export async function preCacheMultipleChunkUrls(env: Env, fileId: string, chunkI
  * Initiates the pre-caching of chunk URLs for a file.
  * This function initiates the pre-caching of chunk URLs for a file to improve performance.
  * @param env - The environment object containing configuration and bindings.
- * @param fileId - The ID of the file.
+ * @param objectId - The ID of the file.
  */
-export async function initiatePreCaching(env: Env, fileId: string) {
-  console.log(`Initiating pre-caching for file ID: ${fileId}`);
+export async function initiatePreCaching(env: Env, objectId: string) {
+  console.log(`Initiating pre-caching for object ID: ${objectId}`);
   try {
-    const metadata = await getFileMetadata(env.FILES, `file:${fileId}`);
+    const metadata = await getObjectMetadata(env.FILES, objectId);
     if (!metadata) {
-      console.error(`Metadata not found for file ${fileId}`);
+      console.error(`Metadata not found for object ${objectId}`);
       return;
     }
 
     const chunksToPreCache = Math.min(5, metadata.chunkIds.length);
     const chunkIndices = Array.from({length: chunksToPreCache}, (_, i) => i);
-    await preCacheMultipleChunkUrls(env, fileId, chunkIndices);
-    console.log(`Pre-caching completed for file ID: ${fileId}`);
+    await preCacheMultipleChunkUrls(env, objectId, chunkIndices);
+    console.log(`Pre-caching completed for object ID: ${objectId}`);
   } catch (error) {
-    console.error(`Error initiating pre-caching for file ID: ${fileId}:`, error);
+    console.error(`Error initiating pre-caching for object ID: ${objectId}:`, error);
   }
 }
 
@@ -284,12 +398,12 @@ export async function initiatePreCaching(env: Env, fileId: string) {
  * Caches the URL of a chunk.
  * This function caches the URL of a chunk in KV storage.
  * @param env - The environment object containing configuration and bindings.
- * @param fileId - The ID of the file.
+ * @param objectId - The ID of the file.
  * @param chunkIndex - The index of the chunk.
  * @param url - The URL of the chunk.
  */
-async function cacheChunkUrl(env: Env, fileId: string, chunkIndex: number, url: string): Promise<void> {
-  const key = `chunkUrl:${fileId}:${chunkIndex}`;
+async function cacheChunkUrl(env: Env, objectId: string, chunkIndex: number, url: string): Promise<void> {
+  const key = `chunkUrl:${objectId}:${chunkIndex}`;
   await env.FILE_DOWNLOAD_INFO.put(key, url, { expirationTtl: 86400 }); // Cache for 24 hours
 }
 
@@ -297,11 +411,28 @@ async function cacheChunkUrl(env: Env, fileId: string, chunkIndex: number, url: 
  * Retrieves the cached URL of a chunk.
  * This function retrieves the cached URL of a chunk from KV storage.
  * @param env - The environment object containing configuration and bindings.
- * @param fileId - The ID of the file.
+ * @param objectId - The ID of the file.
  * @param chunkIndex - The index of the chunk.
  * @returns A promise that resolves to the cached URL of the chunk, or null if not found.
  */
-async function getCachedChunkUrl(env: Env, fileId: string, chunkIndex: number): Promise<string | null> {
-  const key = `chunkUrl:${fileId}:${chunkIndex}`;
+async function getCachedChunkUrl(env: Env, objectId: string, chunkIndex: number): Promise<string | null> {
+  const key = `chunkUrl:${objectId}:${chunkIndex}`;
   return await env.FILE_DOWNLOAD_INFO.get(key);
+}
+
+export async function deleteMessageFromTelegram(botToken: string, chatId: string, messageId: string): Promise<void> {
+  const response = await fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      chat_id: chatId,
+      message_id: messageId,
+    }),
+  })
+  if (!response.ok) {
+    const error: any = await response.json()
+    throw new Error(`Failed to delete message from Telegram: ${error.description}`)
+  }
 }

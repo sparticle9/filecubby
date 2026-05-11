@@ -1,20 +1,19 @@
 import { Context } from 'hono'
 import { Env } from '../index'
+import { DEFAULT_NAMESPACE_ID } from '../db'
 
-export async function deleteExpiredFiles(env: Env) {
-  const { BOT_TOKEN, CHANNEL_ID, FILE_METADATA, TASKS } = env
+export async function deleteExpiredObjects(env: Env) {
+  const { BOT_TOKEN, CHAT_ID, FILES, TASKS } = env
   const now = Date.now()
 
-  // List all keys with prefix 'file:'
-  const { keys } = await FILE_METADATA.list({ prefix: 'file:' })
+  const { keys } = await FILES.list({ prefix: `object:${DEFAULT_NAMESPACE_ID}:` })
 
   for (const key of keys) {
-    const metadata = await FILE_METADATA.get(key.name, 'json')
-    if (metadata && metadata.expiryTime < now) {
-      // Add delete task to TASKS KV
+    const metadata = await FILES.get<any>(key.name, 'json')
+    if (metadata?.expiresAt && Date.parse(metadata.expiresAt) < now) {
       await TASKS.put(`delete:${key.name}`, JSON.stringify({
-        fileId: key.name.split(':')[1],
-        isChunked: metadata.isChunked,
+        objectId: key.name.split(':')[2],
+        isChunked: metadata.chunks > 1,
         chunkIds: metadata.chunkIds,
       }))
     }
@@ -23,18 +22,22 @@ export async function deleteExpiredFiles(env: Env) {
   // Process delete tasks
   const { keys: taskKeys } = await TASKS.list({ prefix: 'delete:' })
   for (const taskKey of taskKeys) {
-    const task = await TASKS.get(taskKey.name, 'json')
-    if (task) {
-      if (task.isChunked) {
-        for (const chunkId of task.chunkIds) {
-          await deleteMessageFromTelegram(BOT_TOKEN, CHANNEL_ID, chunkId)
+      const task = await TASKS.get<any>(taskKey.name, 'json')
+      if (task) {
+        if (task.isChunked) {
+          for (const chunkId of task.chunkIds) {
+          await deleteMessageFromTelegram(BOT_TOKEN, CHAT_ID, chunkId)
         }
       }
-      await deleteMessageFromTelegram(BOT_TOKEN, CHANNEL_ID, task.fileId)
-      await FILE_METADATA.delete(`file:${task.fileId}`)
+      await FILES.delete(`object:${DEFAULT_NAMESPACE_ID}:${task.objectId}`)
       await TASKS.delete(taskKey.name)
     }
   }
+}
+
+export async function deleteExpiredObjectsHandler(c: Context<{ Bindings: Env }>) {
+  await deleteExpiredObjects(c.env);
+  return c.json({ Code: 1, Message: 'Expired-object cleanup scheduled' });
 }
 
 async function deleteMessageFromTelegram(botToken: string, channelId: string, messageId: string) {

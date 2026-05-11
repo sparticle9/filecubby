@@ -2,452 +2,388 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
-	"net/http"
-	"net/http/httputil"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
+	nativeclipboard "github.com/aymanbagabas/go-nativeclipboard"
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/spf13/viper"
-	"golang.design/x/clipboard"
 )
 
 type UploadResponse struct {
-	Code      int    `json:"Code"`
-	Message   string `json:"Message"`
-	URL       string `json:"url"`
-	FileID    string `json:"fileId"`
-	SessionID string `json:"sessionId"`
+	Code        int    `json:"Code"`
+	Message     string `json:"Message"`
+	URL         string `json:"url,omitempty"`
+	ObjectID    string `json:"objectId,omitempty"`
+	SessionID   string `json:"sessionId,omitempty"`
+	ChunkIndex  int64  `json:"chunkIndex,omitempty"`
+	TotalChunks int64  `json:"totalChunks,omitempty"`
 }
 
-/**
- * Uploads a file to the server.
- * @param filePath - The path to the file to upload.
- * @param uploadType - The type of upload (e.g., "image").
- * @param verbose - Whether to enable verbose logging.
- */
-func uploadFile(filePath string, uploadType string, verbose bool) {
+type UploadOptions struct {
+	Path          string
+	Tags          []string
+	CollectionIDs []string
+	Description   string
+}
+
+func uploadFile(filePath string, uploadType string, opts UploadOptions) (UploadResponse, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		fmt.Printf("Error opening file: %s\n", err)
-		return
+		return UploadResponse{}, fmt.Errorf("open file: %w", err)
 	}
 	defer file.Close()
 
 	fileInfo, err := file.Stat()
 	if err != nil {
-		fmt.Printf("Error getting file info: %s\n", err)
-		return
+		return UploadResponse{}, fmt.Errorf("stat file: %w", err)
 	}
 
 	fileSize := fileInfo.Size()
 	chunkSize := int64(viper.GetInt("general.MAX_CHUNK_SIZE") * 1024 * 1024)
+	if chunkSize <= 0 {
+		chunkSize = 20 * 1024 * 1024
+	}
 
 	mtype, err := mimetype.DetectFile(filePath)
 	if err != nil {
-		fmt.Printf("Error detecting MIME type: %s\n", err)
-		return
+		return UploadResponse{}, fmt.Errorf("detect MIME type: %w", err)
 	}
 	detectedMimeType := mtype.String()
-	fmt.Printf("Detected MIME type: %s\n", detectedMimeType)
+	if verbose {
+		fmt.Printf("Detected MIME type: %s\n", detectedMimeType)
+	}
 
-	// Check if it's an image upload and validate MIME type
 	if uploadType == "image" {
 		if !strings.HasPrefix(detectedMimeType, "image/") {
-			fmt.Printf("Error: File is not a recognized image format. Detected MIME type: %s\n", detectedMimeType)
-			return
+			return UploadResponse{}, fmt.Errorf("file is not a recognized image format: %s", detectedMimeType)
 		}
 
-		// Check MAX_IMAGE_SIZE for image uploads
 		maxImageSize := int64(viper.GetInt("image.MAX_IMAGE_SIZE") * 1024 * 1024)
+		if maxImageSize <= 0 {
+			maxImageSize = 10 * 1024 * 1024
+		}
 		if fileSize > maxImageSize {
-			fmt.Printf("Error: Image size (%d bytes) exceeds the maximum allowed size (%d bytes)\n", fileSize, maxImageSize)
-			return
+			return UploadResponse{}, fmt.Errorf("image size %d bytes exceeds maximum %d bytes", fileSize, maxImageSize)
 		}
 	}
 
 	if fileSize <= chunkSize {
-		uploadSingleFile(file, filePath, fileSize, uploadType, verbose, detectedMimeType)
-	} else {
-		uploadChunkedFile(file, filePath, fileSize, chunkSize, uploadType, verbose, detectedMimeType)
+		return uploadSingleFile(file, filePath, uploadType, detectedMimeType, opts)
 	}
+	return uploadChunkedFile(file, filePath, fileSize, chunkSize, detectedMimeType, opts)
 }
 
-/**
- * Uploads a single file to the server.
- * @param file - The file to upload.
- * @param filePath - The path to the file.
- * @param fileSize - The size of the file.
- * @param uploadType - The type of upload (e.g., "image").
- * @param verbose - Whether to enable verbose logging.
- * @param mimeType - The MIME type of the file.
- */
-func uploadSingleFile(file *os.File, filePath string, fileSize int64, uploadType string, verbose bool, mimeType string) {
+func uploadSingleFile(file *os.File, filePath string, uploadType string, mimeType string, opts UploadOptions) (UploadResponse, error) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return UploadResponse{}, err
+	}
 
-	// Use "image" for image uploads, "file" for regular files
 	fieldName := "file"
+	endpoint := "upload"
 	if uploadType == "image" {
 		fieldName = "image"
+		endpoint = "upload/image"
 	}
 
 	part, err := writer.CreateFormFile(fieldName, filepath.Base(filePath))
 	if err != nil {
-		fmt.Printf("Error creating form file: %s\n", err)
-		return
+		return UploadResponse{}, err
 	}
-
-	_, err = io.Copy(part, file)
-	if err != nil {
-		fmt.Printf("Error copying file to form: %s\n", err)
-		return
+	if _, err := io.Copy(part, file); err != nil {
+		return UploadResponse{}, err
 	}
-
-	// Write the fileType field before closing the writer
-	err = writer.WriteField("fileType", mimeType)
-	if err != nil {
-		fmt.Printf("Error writing fileType field: %s\n", err)
-		return
+	if err := writer.WriteField("objectType", mimeType); err != nil {
+		return UploadResponse{}, err
 	}
-
-	// Write the fileName field before closing the writer
-	err = writer.WriteField("fileName", filepath.Base(filePath))
-	if err != nil {
-		fmt.Printf("Error writing fileName field: %s\n", err)
-		return
+	if err := writer.WriteField("objectName", filepath.Base(filePath)); err != nil {
+		return UploadResponse{}, err
 	}
-
-	// Make sure this is done before closing the writer
-	err = writer.Close()
-	if err != nil {
-		fmt.Printf("Error closing multipart writer: %s\n", err)
-		return
+	if err := writer.WriteField("objectSize", strconv.FormatInt(fileInfo.Size(), 10)); err != nil {
+		return UploadResponse{}, err
 	}
-
-	url := viper.GetString("general.baseUrl")
-	if uploadType == "image" {
-		url += "pic"
-	} else {
-		url += "upload"
+	if err := writeUploadOptionFields(writer, opts); err != nil {
+		return UploadResponse{}, err
 	}
-
-	req, err := http.NewRequest("POST", url, body)
-	if err != nil {
-		fmt.Printf("Error creating request: %s\n", err)
-		return
-	}
-
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("Authorization", "Bearer "+viper.GetString("general.token"))
-
-	if verbose {
-		fmt.Printf("Request URL: %s\n", url)
-		fmt.Printf("Authorization Header: %s\n", req.Header.Get("Authorization"))
-		dumpRequest(req)
-	}
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Printf("Error sending request: %s\n", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if verbose {
-		dumpResponse(resp)
+	if err := writer.Close(); err != nil {
+		return UploadResponse{}, err
 	}
 
 	var result UploadResponse
-	err = json.NewDecoder(resp.Body).Decode(&result)
-	if err != nil {
-		fmt.Printf("Error decoding response: %s\n", err)
-		return
+	if err := doMultipart(endpoint, body, writer, &result); err != nil {
+		return UploadResponse{}, err
 	}
-
-	if result.Code == 1 {
-		fmt.Printf("File uploaded successfully. URL: %s\n", result.URL)
-	} else {
-		fmt.Printf("Error uploading file: %s\n", result.Message)
-	}
+	printUploadResult(result)
+	return result, nil
 }
 
-/**
- * Uploads a file in chunks to the server.
- * @param file - The file to upload.
- * @param filePath - The path to the file.
- * @param fileSize - The size of the file.
- * @param chunkSize - The size of each chunk.
- * @param uploadType - The type of upload (e.g., "image").
- * @param verbose - Whether to enable verbose logging.
- * @param mimeType - The MIME type of the file.
- */
-func uploadChunkedFile(file *os.File, filePath string, fileSize, chunkSize int64, uploadType string, verbose bool, mimeType string) {
+func uploadChunkedFile(file *os.File, filePath string, fileSize, chunkSize int64, mimeType string, opts UploadOptions) (UploadResponse, error) {
 	totalChunks := (fileSize + chunkSize - 1) / chunkSize
 
-	// Initialize upload
-	fileID, err := initUpload(filePath, fileSize, totalChunks, chunkSize, verbose, mimeType)
+	objectID, err := initUpload(filePath, fileSize, totalChunks, chunkSize, mimeType, opts)
 	if err != nil {
-		fmt.Printf("Error initializing upload: %s\n", err)
-		return
+		return UploadResponse{}, fmt.Errorf("initialize upload: %w", err)
 	}
 
-	// Debug prints to ensure fileID is initialized
-	fmt.Printf("Initialized upload with fileID: %s\n", fileID)
-
 	var finalResult UploadResponse
-
-	// Upload chunks
 	for i := int64(0); i < totalChunks; i++ {
 		startByte := i * chunkSize
 		endByte := min(startByte+chunkSize, fileSize)
-		chunkSize := endByte - startByte
+		currentChunkSize := endByte - startByte
 
-		result, err := uploadChunk(file, filePath, fileID, i, totalChunks, startByte, chunkSize, verbose)
+		result, err := uploadChunk(file, filePath, objectID, i, totalChunks, startByte, currentChunkSize, mimeType)
 		if err != nil {
-			fmt.Printf("Error uploading chunk %d: %s\n", i+1, err)
-			return
+			return UploadResponse{}, fmt.Errorf("upload chunk %d: %w", i+1, err)
 		}
-
-		fmt.Printf("Uploaded chunk %d of %d\n", i+1, totalChunks)
-
-		// Store the result of the last chunk
-		if i == totalChunks-1 {
-			finalResult = result
+		finalResult = result
+		if !jsonOutput {
+			fmt.Printf("Uploaded chunk %d of %d\n", i+1, totalChunks)
 		}
 	}
 
-	fmt.Printf("All chunks uploaded successfully. File ID: %s\n", fileID)
-	fmt.Printf("Message: %s\n", finalResult.Message)
-	fmt.Printf("URL: %s\n", finalResult.URL)
+	printUploadResult(finalResult)
+	return finalResult, nil
 }
 
-/**
- * Initializes the upload process.
- * @param filePath - The path to the file.
- * @param fileSize - The size of the file.
- * @param totalChunks - The total number of chunks.
- * @param chunkSize - The size of each chunk.
- * @param verbose - Whether to enable verbose logging.
- * @param mimeType - The MIME type of the file.
- * @returns The file ID and an error, if any.
- */
-func initUpload(filePath string, fileSize, totalChunks, chunkSize int64, verbose bool, mimeType string) (string, error) {
-	url := viper.GetString("general.baseUrl") + "upload"
-
+func initUpload(filePath string, fileSize, totalChunks, chunkSize int64, mimeType string, opts UploadOptions) (string, error) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	fileName := filepath.Base(filePath)
-
-	writer.WriteField("isInit", "true")
-	writer.WriteField("fileName", fileName)
-	writer.WriteField("fileSize", strconv.FormatInt(fileSize, 10))
-	writer.WriteField("totalChunks", strconv.FormatInt(totalChunks, 10))
-	writer.WriteField("chunkSize", strconv.FormatInt(chunkSize, 10))
-	writer.WriteField("fileType", mimeType)
-
-	err := writer.Close()
-	if err != nil {
+	objectName := filepath.Base(filePath)
+	fields := map[string]string{
+		"objectName":  objectName,
+		"objectSize":  strconv.FormatInt(fileSize, 10),
+		"totalChunks": strconv.FormatInt(totalChunks, 10),
+		"chunkSize":   strconv.FormatInt(chunkSize, 10),
+		"objectType":  mimeType,
+	}
+	for name, value := range fields {
+		if err := writer.WriteField(name, value); err != nil {
+			return "", err
+		}
+	}
+	if err := writeUploadOptionFields(writer, opts); err != nil {
 		return "", err
 	}
-
-	req, err := http.NewRequest("POST", url, body)
-	if err != nil {
+	if err := writer.Close(); err != nil {
 		return "", err
-	}
-
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("Authorization", "Bearer "+viper.GetString("general.token"))
-
-	if verbose {
-		fmt.Printf("Init Upload Request URL: %s\n", url)
-		fmt.Println() // Add a newline after the body dump
-		dumpRequest(req)
-	}
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if verbose {
-		dumpResponse(resp)
 	}
 
 	var result UploadResponse
-	err = json.NewDecoder(resp.Body).Decode(&result)
-	if err != nil {
+	if err := doMultipart("upload", body, writer, &result); err != nil {
 		return "", err
 	}
-
-	if result.Code != 1 {
-		return "", fmt.Errorf("failed to initialize upload: %s", result.Message)
+	if result.ObjectID == "" {
+		return "", fmt.Errorf("server did not return objectId")
 	}
-
-	return result.FileID, nil
+	if verbose && !jsonOutput {
+		fmt.Printf("Initialized upload with objectID: %s\n", result.ObjectID)
+	}
+	return result.ObjectID, nil
 }
 
-/**
- * Uploads a chunk of a file to the server.
- * @param file - The file to upload.
- * @param filePath - The path to the file.
- * @param fileID - The ID of the file.
- * @param chunkIndex - The index of the chunk.
- * @param totalChunks - The total number of chunks.
- * @param startByte - The starting byte of the chunk.
- * @param chunkSize - The size of the chunk.
- * @param verbose - Whether to enable verbose logging.
- * @returns The upload response and an error, if any.
- */
-func uploadChunk(file *os.File, filePath, fileID string, chunkIndex, totalChunks, startByte, chunkSize int64, verbose bool) (UploadResponse, error) {
-	url := viper.GetString("general.baseUrl") + "upload"
-
+func uploadChunk(file *os.File, filePath, objectID string, chunkIndex, totalChunks, startByte, chunkSize int64, mimeType string) (UploadResponse, error) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	writer.WriteField("isChunk", "true")
-	writer.WriteField("chunkIndex", strconv.FormatInt(chunkIndex, 10))
-	writer.WriteField("totalChunks", strconv.FormatInt(totalChunks, 10))
-	writer.WriteField("fileId", fileID)
-	writer.WriteField("fileName", filepath.Base(filePath)) // Add fileName field
+	fields := map[string]string{
+		"isChunk":     "true",
+		"chunkIndex":  strconv.FormatInt(chunkIndex, 10),
+		"totalChunks": strconv.FormatInt(totalChunks, 10),
+		"objectId":    objectID,
+		"objectName":  filepath.Base(filePath),
+		"objectType":  mimeType,
+		"chunkSize":   strconv.FormatInt(chunkSize, 10),
+	}
+	for name, value := range fields {
+		if err := writer.WriteField(name, value); err != nil {
+			return UploadResponse{}, err
+		}
+	}
 
 	part, err := writer.CreateFormFile("file", fmt.Sprintf("%s.part%d", filepath.Base(filePath), chunkIndex))
 	if err != nil {
 		return UploadResponse{}, err
 	}
-
-	_, err = file.Seek(startByte, 0)
-	if err != nil {
+	if _, err := file.Seek(startByte, 0); err != nil {
 		return UploadResponse{}, err
 	}
-
-	_, err = io.CopyN(part, file, chunkSize)
-	if err != nil {
+	if _, err := io.CopyN(part, file, chunkSize); err != nil {
 		return UploadResponse{}, err
 	}
-
-	err = writer.Close()
-	if err != nil {
+	if err := writer.Close(); err != nil {
 		return UploadResponse{}, err
-	}
-
-	req, err := http.NewRequest("POST", url, body)
-	if err != nil {
-		return UploadResponse{}, err
-	}
-
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("Authorization", "Bearer "+viper.GetString("general.token"))
-
-	if verbose {
-		fmt.Printf("Chunk Upload Request URL: %s\n", url)
-		fmt.Println() // Add a newline after the body dump
-		dumpRequest(req)
-	}
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return UploadResponse{}, err
-	}
-	defer resp.Body.Close()
-
-	if verbose {
-		dumpResponse(resp)
 	}
 
 	var result UploadResponse
-	err = json.NewDecoder(resp.Body).Decode(&result)
-	if err != nil {
+	if err := doMultipart("upload", body, writer, &result); err != nil {
 		return UploadResponse{}, err
 	}
-
-	if result.Code != 1 {
-		return UploadResponse{}, fmt.Errorf("failed to upload chunk: %s", result.Message)
-	}
-
 	return result, nil
 }
 
-/**
- * Returns the minimum of two int64 values.
- * @param a - The first value.
- * @param b - The second value.
- * @returns The minimum value.
- */
+func uploadImageFromClipboard(opts UploadOptions) error {
+	imageData, err := nativeclipboard.Image.Read()
+	if err == nil && len(imageData) > 0 {
+		return uploadImageData(imageData, opts)
+	}
+	fallbackData, fallbackErr := readClipboardImageWithMacOSFallback()
+	if fallbackErr == nil && len(fallbackData) > 0 {
+		return uploadImageData(fallbackData, opts)
+	}
+	if err != nil {
+		return fmt.Errorf("read clipboard image: %w; macOS fallback: %v", err, fallbackErr)
+	}
+	return fmt.Errorf("clipboard does not contain image data; macOS fallback: %v", fallbackErr)
+}
+
+func readClipboardImageWithMacOSFallback() ([]byte, error) {
+	if runtime.GOOS != "darwin" {
+		return nil, fmt.Errorf("unsupported platform")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "filecubby-clipboard-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	outPath := filepath.Join(tmpDir, "clipboard.png")
+	script := `
+set outPath to POSIX file "` + strings.ReplaceAll(outPath, `"`, `\"`) + `"
+try
+  set pngData to the clipboard as «class PNGf»
+  set fileRef to open for access outPath with write permission
+  set eof fileRef to 0
+  write pngData to fileRef
+  close access fileRef
+on error errMsg number errNum
+  try
+    close access outPath
+  end try
+  error errMsg number errNum
+end try
+`
+	if output, err := exec.Command("osascript", "-e", script).CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("osascript failed: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("osascript produced empty image")
+	}
+	return data, nil
+}
+
+func writeUploadOptionFields(writer *multipart.Writer, opts UploadOptions) error {
+	if opts.Path != "" {
+		if err := writer.WriteField("path", opts.Path); err != nil {
+			return err
+		}
+	}
+	if len(opts.Tags) > 0 {
+		if err := writer.WriteField("tags", strings.Join(opts.Tags, ",")); err != nil {
+			return err
+		}
+	}
+	if len(opts.CollectionIDs) > 0 {
+		if err := writer.WriteField("collectionIds", strings.Join(opts.CollectionIDs, ",")); err != nil {
+			return err
+		}
+	}
+	if opts.Description != "" {
+		if err := writer.WriteField("description", opts.Description); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func uploadImageData(imageData []byte, opts UploadOptions) error {
+	mtype, err := mimetype.DetectReader(bytes.NewReader(imageData))
+	if err != nil {
+		return fmt.Errorf("detect MIME type: %w", err)
+	}
+	mimeType := mtype.String()
+	if !strings.HasPrefix(mimeType, "image/") {
+		return fmt.Errorf("clipboard content is not a recognized image format: %s", mimeType)
+	}
+
+	maxImageSize := int64(viper.GetInt("image.MAX_IMAGE_SIZE") * 1024 * 1024)
+	if maxImageSize <= 0 {
+		maxImageSize = 10 * 1024 * 1024
+	}
+	if int64(len(imageData)) > maxImageSize {
+		return fmt.Errorf("image size %d bytes exceeds maximum %d bytes", len(imageData), maxImageSize)
+	}
+
+	extension := ".bin"
+	if exts, err := mime.ExtensionsByType(mimeType); err == nil && len(exts) > 0 {
+		extension = exts[0]
+	}
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("image", "clipboard-image"+extension)
+	if err != nil {
+		return err
+	}
+	if _, err := part.Write(imageData); err != nil {
+		return err
+	}
+	if err := writer.WriteField("objectType", mimeType); err != nil {
+		return err
+	}
+	if err := writer.WriteField("objectName", "clipboard-image"+extension); err != nil {
+		return err
+	}
+	if err := writer.WriteField("objectSize", strconv.Itoa(len(imageData))); err != nil {
+		return err
+	}
+	if err := writeUploadOptionFields(writer, opts); err != nil {
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+
+	var result UploadResponse
+	if err := doMultipart("upload/image", body, writer, &result); err != nil {
+		return err
+	}
+	printUploadResult(result)
+	return nil
+}
+
+func printUploadResult(result UploadResponse) {
+	if jsonOutput {
+		_ = printJSON(result)
+		return
+	}
+	if result.URL != "" {
+		fmt.Printf("Uploaded successfully: %s\n", result.URL)
+		return
+	}
+	fmt.Printf("Uploaded successfully. Object ID: %s\n", result.ObjectID)
+}
+
 func min(a, b int64) int64 {
 	if a < b {
 		return a
 	}
 	return b
 }
-
-/**
- * Dumps the request headers and URL.
- * @param req - The HTTP request.
- */
-func dumpRequest(req *http.Request) {
-	fmt.Println("Request Headers:")
-	for name, values := range req.Header {
-		for _, value := range values {
-			fmt.Printf("%s: %s\n", name, value)
-		}
-	}
-	fmt.Println("Request URL:", req.URL.String())
-	fmt.Println("Request Method:", req.Method)
-}
-
-/**
- * Dumps the response.
- * @param resp - The HTTP response.
- */
-func dumpResponse(resp *http.Response) {
-	dump, err := httputil.DumpResponse(resp, true)
-	if err != nil {
-		fmt.Printf("Error dumping response: %s\n", err)
-	} else {
-		fmt.Printf("Response dump:\n%s\n", dump)
-	}
-}
-
-/**
- * Processes image data from the clipboard.
- * @param imageData - The image data.
- * @param verbose - Whether to enable verbose logging.
- */
-func processImageData(imageData []byte, verbose bool) {
-	mtype, err := mimetype.DetectReader(bytes.NewReader(imageData))
-	if err != nil {
-		fmt.Printf("Error detecting MIME type: %s\n", err)
-		return
-	}
-
-	mimeType := mtype.String()
-	fmt.Printf("Detected MIME type: %s\n", mimeType)
-	fmt.Printf("MIME type details: %+v\n", mtype)
-
-	if !strings.HasPrefix(mimeType, "image/") {
-		fmt.Println("Clipboard content is not a recognized image format")
-		return
-	}
-
-	// Now we have the image data and mime type, we can proceed with the upload
-	uploadImageData(imageData, mimeType, verbose)
-}
-
-/**
- * Uploads image data to the server.
- * @param imageData - The image data.
- * @param mimeType - The MIME type of the image.
-
-</rewritten_file>

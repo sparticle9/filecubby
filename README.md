@@ -1,155 +1,222 @@
-# tgpan: Serverless Telegram-based File Storage System
+# Filecubby
 
-## Overview
+Filecubby is an experimental, single-owner object transfer and media streaming tool.
+It runs as a Cloudflare Worker, stores metadata in Cloudflare KV, and stores
+object chunks as Telegram documents in an operator-controlled chat.
 
-tgpan is a serverless file storage system that leverages Telegram's infrastructure for storing files. It provides a simple API for uploading and downloading files, with the actual file data being stored in Telegram channels or groups. This approach allows for virtually unlimited, free file storage with the reliability of Telegram's infrastructure.
+This project is public OSS, but it is not positioned as a general cloud-storage
+service, backup product, public object host, piracy tool, or Google Drive clone.
+Read [docs/architecture.md](docs/architecture.md) and
+[docs/observation.md](docs/observation.md) before publishing a
+deployment.
 
-## Key Features
+Production URL for this repo's current deployment: `https://filecubby.<your-cloudflare-domain>`
 
-- Serverless architecture using Cloudflare Workers
-- File upload and download via API
-- Support for large file uploads through chunking
-- Flexible file expiration system
-- User management system with admin capabilities
-- Integration with Telegram for file storage
+## What Works
 
-## API Endpoints
+- Upload objects through `POST /api/upload` or the Go CLI.
+- Store object chunks as Telegram documents and metadata in Cloudflare KV.
+- Serve unlisted download URLs from `/d/:objectId`.
+- Serve inline media with byte-range support for browser and FFmpeg streaming.
+- Organize objects with lightweight paths, tags, and collections.
+- Manage named full-access service tokens.
+- Use `/openapi.json` and CLI `--json` output for agent workflows.
+- Use `/console` for session-local token and collection management.
+- Optionally write parseable Telegram captions or manifest messages for manual
+  recovery and Telegram UI search.
+- Bootstrap Cloudflare, Telegram, secrets, KV, deploys, and smoke checks with
+  `pnpm run setup`.
 
-- `POST /api/upload`: Upload a file (authenticated)
-- `POST /api/pic`: Upload an image (supports both token query param and Authorization header)
-- `GET /d/:fileId`: Download a file (public access)
-- `POST /api/del`: Delete a file (authenticated)
-- `POST /api/users/create` or `PUT /api/users/create`: Create a new user (admin only)
-- `POST /api/users/update` or `PUT /api/users/update`: Update a user (admin only)
-- `POST /api/users/delete`: Delete a user (admin only)
+## Important Limits
 
-## Setup and Deployment
+The default backend uses the public Telegram Bot API. Public Bot API downloads
+are constrained by Telegram's `getFile` path, so Filecubby keeps chunks below that
+limit. The default chunk size is **19 MiB**.
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/tgpan.git
-   cd tgpan
-   ```
+Do not configure 50 MB chunks for the serverless public Bot API backend. A 50 MB
+document may upload successfully but fail later when Filecubby needs to fetch the
+bytes for HTTP download or media streaming.
 
-2. Install dependencies:
-   ```
-   npm install
-   ```
+## Telegram Organization Records
 
-3. Configure `wrangler.toml` with your Cloudflare and Telegram credentials:
-   - Set your `BOT_TOKEN` and `CHANNEL_ID`
-   - Configure D1 database and KV namespace IDs
+By default, Filecubby keeps organization metadata only in Cloudflare KV. To also
+leave a recovery trail in Telegram, set:
 
-4. Initialize the database:
-   ```
-   npm run init-db
-   ```
-
-5. Create an admin user:
-   ```
-   npm run init-admin
-   ```
-
-6. Deploy to Cloudflare Workers:
-   ```
-   wrangler deploy
-   ```
-
-## Usage
-
-### Configuration
-
-- `BOT_TOKEN`: The token for your Telegram bot
-- `CHAT_ID`: The ID of the Telegram channel or group where files will be stored
-Chat ID types:
-For private chats, groups, and supergroups, the chat ID is a number (can be negative for groups).
-For channels, you can use the channel's username (prefixed with '@') instead of a numeric ID.
-
-- `MAX_CHUNK_SIZE`: The maximum size of a single file chunk (default: 20MB)
-- `MAX_IMAGE_SIZE`: The maximum size of an image (default: 30MB)
-- `CACHE_CHUNK_URL_MAX_RETRY`: The maximum number of retries to fetch a chunk URL (default: 5)
-- `CACHE_CHUNK_URL_TIMEOUT`: The timeout for fetching a chunk URL in milliseconds (default: 5000)
-- `CACHE_CHUNK_TTL`: The time-to-live for cached chunk URLs in hours (default: 3)
-
-### Uploading a File
-
-default no expir
-
-```
-curl -X POST https://your-worker.workers.dev/api/upload \
--H "Authorization: Bearer YOUR_USER_TOKEN" \
--F "file=@/path/to/your/file" \
--F "expiryHours=24" # Optional: Set expiry time in hours
+```toml
+TELEGRAM_ORGANIZATION_MODE = "caption"  # off, caption, or manifest
+FILECUBBY_MARKER = "fc"
 ```
 
-### Uploading an Image
-```
-curl -X POST https://your-worker.workers.dev/api/pic \
--H "Authorization: Bearer YOUR_USER_TOKEN" \
--F "image=@/path/to/your/image.jpg" \
--F "expiryHours=24" # Optional: Set expiry time in hours
-```
-Alternatively, you can use the `token` query parameter:
-```
-curl -X POST "https://your-worker.workers.dev/api/pic?token=YOUR_USER_TOKEN" \
--F "image=@/path/to/your/image.jpg"
-```
+`caption` adds short marker-prefixed captions to chunk documents.
+`manifest` additionally sends one recovery text message per logical object after
+the chunk documents are uploaded. The marker is customizable so forks can use
+their own namespace.
 
-### Downloading a File
-```
-curl https://your-worker.workers.dev/d/FILE_ID
+Repair/import is intentionally simple and uses Telegram `getUpdates`, so it can
+only import messages the Bot API can currently see:
+
+```sh
+filecubby --json repair import-telegram --dry-run
+filecubby repair import-telegram --dry-run=false
 ```
 
-Add `?dl=true` to force download instead of inline display.
+## Stack
 
-### User Management(admin only)
+- Cloudflare Workers, Hono
+- Cloudflare KV namespaces: `USERS`, `FILES`, `FILE_DOWNLOAD_INFO`, `TASKS`
+- Cloudflare Analytics Engine dataset: `filecubby_analytics`
+- Telegram Bot API document storage
+- Node 22, pnpm, project-local Wrangler
+- Go CLI installed by `just install`
 
+## Quick Start
+
+```sh
+fnm use
+pnpm install
+pnpm run setup:check
+pnpm run typecheck
+pnpm run build
 ```
-curl -X POST https://your-worker.workers.dev/api/users/create \
--H "Authorization: Bearer ADMIN_TOKEN" \
--H "Content-Type: application/json" \
--d '{"username": "newuser"}'
+
+For full interactive setup:
+
+```sh
+pnpm run setup
 ```
 
+The setup script reads/writes ignored `.env`, validates Telegram and
+Cloudflare, creates/verifies KV namespaces, sets Worker secrets, initializes
+remote KV, runs dry-run deploy, asks before live deploy, and performs real
+upload/download smoke checks.
 
-## Configuration Options
+GitHub Actions deployment is available through the manual
+`Deploy Filecubby` workflow after repository secrets are configured.
 
-- `CHUNK_SIZE`: Maximum size of a single file chunk (default: 10MB)
-- `PIC_MAX_SIZE`: Maximum size for images uploaded via `/api/pic` (default: 30MB)
+## CLI
 
-These can be adjusted in the `wrangler.toml` file.
+Install:
 
-## Database Schema
+```sh
+just install
+```
 
-The system uses a D1 database with two tables:
+Daily config:
 
-### Users Table
-- `id`: TEXT PRIMARY KEY
-- `token`: TEXT UNIQUE NOT NULL
-- `username`: TEXT UNIQUE NOT NULL
-- `enabled`: BOOLEAN NOT NULL DEFAULT TRUE
+```yaml
+general:
+  baseUrl: http://localhost:8787/api/
+  token: <service-or-admin-token>
+  timeout: 30
+  MAX_CHUNK_SIZE: 19
+image:
+  MAX_IMAGE_SIZE: 10
+```
 
-### Files Table
-- `id`: TEXT PRIMARY KEY
-- `userId`: TEXT NOT NULL
-- `filename`: TEXT NOT NULL
-- `size`: INTEGER NOT NULL
-- `chunks`: INTEGER NOT NULL
-- `chunkIds`: TEXT NOT NULL (JSON array of chunk IDs)
-- `expiresAt`: DATETIME
-- `fileType`: TEXT NOT NULL
-- `uploadedAt`: DATETIME NOT NULL
+Keep it private:
 
-## Limitations and Considerations
+```sh
+chmod 600 ~/.config/filecubby/config.yml
+```
 
-- Maximum file size is limited by Telegram's restrictions (currently 2GB per file).
-- File storage duration is subject to Telegram's data retention policies.
-- Ensure compliance with Telegram's terms of service when using this system.
+Usage:
 
-## Contributing
+```sh
+filecubby uf ./file.m4a --path /audio --tag demo
+filecubby ui ./image.png --path /images
+filecubby objects ls --path /audio
+filecubby meta <object-id>
+filecubby get <object-id> ./file.m4a
+filecubby mv <object-id> /archive/audio
+filecubby tag <object-id> demo,archive
+filecubby collections create "Audio drafts" --path /audio --tag draft
+filecubby tokens list
+```
 
-Contributions are welcome! Please fork the repository and submit a pull request with your changes.
+Use `--json` for scripts and agents.
 
-## License
+## API
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+Service-token auth uses `Authorization: Bearer <service-token>`.
+
+Admin routes use `Authorization: Bearer <ADMIN_TOKEN>`.
+
+```text
+GET  /test
+GET  /openapi.json
+GET  /console
+POST /api/upload
+GET  /api/upload/status/:objectId
+POST /api/upload/finalize/:objectId
+GET  /api/objects
+GET  /api/objects/:id
+PATCH /api/objects/:id
+GET  /api/collections
+POST /api/collections
+GET  /api/collections/:id
+PATCH /api/collections/:id
+DELETE /api/collections/:id
+POST /api/repair/import-telegram
+POST /api/upload/image
+HEAD /d/:objectId
+GET  /d/:objectId
+GET  /d/:objectId/partial
+POST /api/del
+POST /api/delete-expired
+GET  /api/tokens
+POST /api/tokens
+PATCH /api/tokens/:id
+DELETE /api/tokens/:id
+POST /api/cache/clear
+GET  /api/cache/status
+GET  /api/cache/count
+POST /bot-webhook
+```
+
+Upload:
+
+```sh
+curl -fsS -X POST "$FILECUBBY_URL/api/upload" \
+  -H "Authorization: Bearer $FILECUBBY_TOKEN" \
+  -F "file=@/path/to/file" \
+  -F "path=/audio" \
+  -F "tags=demo,draft"
+```
+
+Download:
+
+```sh
+curl -fsS "$FILECUBBY_URL/d/<objectId>" -o object
+curl -fsS -r 0-1023 "$FILECUBBY_URL/d/<objectId>" -o part
+```
+
+Use `?dl=1` to force attachment disposition for otherwise inline-safe types.
+
+## Validation
+
+Local gates:
+
+```sh
+pnpm run typecheck
+pnpm run build
+just test
+```
+
+Representative live proof from the revival baseline:
+
+- Custom domain `/test` returned OK.
+- Real CLI upload/download byte-compare passed.
+- A 60 MB `.m4a` uploaded through chunking and streamed in Chrome.
+- FFmpeg ranged seek/decode read a small byte range instead of the full object.
+
+## Docs
+
+- [docs/architecture.md](docs/architecture.md): OSS posture and product
+  principles.
+- [docs/observation.md](docs/observation.md): platform and privacy
+  boundaries.
+- [docs/architecture.md](docs/architecture.md): operator runbook.
+- [docs/architecture.md](docs/architecture.md): current implementation design.
+- [docs/architecture.md](docs/architecture.md): short module map.
+- [docs/observation.md](docs/observation.md): Analytics Engine status and query
+  examples.

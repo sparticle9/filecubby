@@ -33,4 +33,4 @@ builds:
 archives:
   - format: zip
     files:
-      - config.yml
+      - config.yml.example

@@ -1,64 +1,105 @@
-# tgpan CLI
+# Filecubby CLI
 
-tgpan CLI is a command-line interface tool for uploading files and images to the tgpan service.
+Go CLI for Filecubby uploads and service-token administration.
 
-## Build from source
+## Install
 
-### Option 1: Simple Go build
+From the repository root:
 
-1. Ensure you have Go installed on your system.
-2. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/tgpan-cli.git
-   cd tgpan-cli/cli
-   ```
-3. Build the CLI:
-   ```
-   go build -ldflags="-s -w" -o tgpan .
-   ```
+```sh
+just install
+```
 
-### Option 2: Using GoReleaser
+This builds `~/.local/bin/filecubby`. Override with:
 
-1. Install GoReleaser (if not already installed):
-   ```
-   go install github.com/goreleaser/goreleaser@latest
-   ```
-
-2. Clone the repository (if you haven't already):
-   ```
-   git clone https://github.com/yourusername/tgpan-cli.git
-   cd tgpan-cli/cli
-   ```
-
-3. Build and package the CLI:
-   ```
-   goreleaser build --snapshot --rm-dist
-   ```
-
-4. The built binaries will be in the `dist` directory. You can find the appropriate binary for your system:
-   - For macOS: `dist/tgpan_darwin_amd64/tgpan` or `dist/tgpan_darwin_arm64/tgpan`
-   - For Linux: `dist/tgpan_linux_amd64/tgpan` or `dist/tgpan_linux_arm64/tgpan`
-
-5. Copy the appropriate binary and the `config.yml` file to your desired location.
+```sh
+FILECUBBY_INSTALL_DIR=/path/to/bin just install
+```
 
 ## Configuration
 
-Before using the CLI, make sure to set up your `config.yml` file in the same directory as the executable. `config.yml.example` can be used as a template.
+Default config path:
 
+```text
+~/.config/filecubby/config.yml
+```
 
-## Features
+Example:
 
-- File upload support
-- Image upload from file or clipboard
-- Chunked uploads for large files
-- Image size limit enforcement
-- Accurate MIME type detection
-- Verbose mode for debugging
-- Custom configuration file support
+```yaml
+general:
+  baseUrl: http://localhost:8787/api/
+  token: <service-or-admin-token>
+  timeout: 30
+  MAX_CHUNK_SIZE: 19
+image:
+  MAX_IMAGE_SIZE: 10
+```
 
-## Dependencies
+Keep it private:
 
-- github.com/spf13/cobra
-- github.com/spf13/viper
-- golang.design/x/clipboard
-- github.com/gabriel-vasile/mimetype
+```sh
+chmod 600 ~/.config/filecubby/config.yml
+```
+
+Env and flags override config:
+
+```sh
+FILECUBBY_URL=https://filecubby.<your-cloudflare-domain>
+FILECUBBY_TOKEN=<token>
+filecubby --base-url https://filecubby.<your-cloudflare-domain> --token <token> uf ./file
+```
+
+## Uploads
+
+```sh
+filecubby uf ./file.txt
+filecubby uf ./file.txt --path /docs --tag draft
+filecubby ui ./image.png
+filecubby ui
+```
+
+`filecubby ui` reads image bytes through `github.com/aymanbagabas/go-nativeclipboard`. On macOS it falls back to `osascript` when the native clipboard backend cannot return image bytes.
+
+Use `--json` for scripts:
+
+```sh
+filecubby --json uf ./file.txt
+filecubby --json objects ls --path /docs
+```
+
+## Objects And Collections
+
+```sh
+filecubby objects ls
+filecubby meta <object-id>
+filecubby get <object-id> ./downloaded-file
+filecubby mv <object-id> /archive
+filecubby tag <object-id> draft,archive
+filecubby collections list
+filecubby collections create "Audio drafts" --path /audio --tag draft
+filecubby repair import-telegram --dry-run
+```
+
+## Service Tokens
+
+These commands use `/api/tokens` and require an admin token:
+
+```sh
+filecubby tokens list
+filecubby tokens create laptop --note "local CLI"
+filecubby tokens update <id> --name laptop-main --note "rotated"
+filecubby tokens disable <id>
+filecubby tokens enable <id>
+filecubby tokens delete <id>
+```
+
+Token values are printed only on `tokens create`.
+
+## Local Development
+
+```sh
+cd cli
+go test ./...
+go build -ldflags="-s -w" -o filecubby .
+```

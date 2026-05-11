@@ -1,16 +1,6 @@
-import { Context } from 'hono'
-import { Env } from '../index'
-import { saveUser, getUser, getUserByUsername, updateUser, deleteUser } from '../db'
-import { generateSecureToken, generateUserId } from '../utils'
+import { createServiceToken, deleteServiceToken, getServiceTokenByName, updateServiceToken } from '../db'
 
-export async function handleUserManagement(c: Context<{ Bindings: Env }>, action: string) {
-  const adminToken = c.req.header('Authorization')?.split(' ')[1];
-  const admin = await getUser(c.env.USERS, adminToken);
-  
-  if (!admin || admin.username !== 'admin') {
-    return c.json({ Code: 0, Message: 'Unauthorized' }, 401);
-  }
-
+export async function handleUserManagement(c: any, action: string) {
   switch (action) {
     case 'create':
       return handleCreateUser(c);
@@ -23,34 +13,39 @@ export async function handleUserManagement(c: Context<{ Bindings: Env }>, action
   }
 }
 
-async function handleCreateUser(c: Context<{ Bindings: Env }>) {
+async function handleCreateUser(c: any) {
   const { username } = await c.req.json();
-  const existingUser = await getUserByUsername(c.env.USERS, username);
-  if (existingUser) {
+  const existingToken = await getServiceTokenByName(c.env.USERS, username);
+  if (existingToken) {
     return c.json({ Code: 0, Message: 'Username already exists' }, 400);
   }
 
-  const token = generateSecureToken();
-  const userId = generateUserId();
-  const user = { id: userId, token, username, enabled: true };
-  await saveUser(c.env.USERS, user);
-  return c.json({ Code: 1, Message: 'User created successfully', token });
+  const { token, serviceToken } = await createServiceToken(c.env.USERS, { name: username });
+  return c.json({
+    Code: 1,
+    Message: 'User created successfully',
+    Deprecated: 'Use POST /api/tokens instead.',
+    token,
+    userId: serviceToken.id,
+  });
 }
 
-async function handleUpdateUser(c: Context<{ Bindings: Env }>) {
+async function handleUpdateUser(c: any) {
   const { username, enabled } = await c.req.json();
-  const user = await getUserByUsername(c.env.USERS, username);
-  if (!user) {
+  const serviceToken = await getServiceTokenByName(c.env.USERS, username);
+  if (!serviceToken) {
     return c.json({ Code: 0, Message: 'User not found' }, 404);
   }
 
-  user.enabled = enabled;
-  await updateUser(c.env.USERS, user);
-  return c.json({ Code: 1, Message: 'User updated successfully' });
+  await updateServiceToken(c.env.USERS, serviceToken.id, { enabled });
+  return c.json({ Code: 1, Message: 'User updated successfully', Deprecated: 'Use PATCH /api/tokens/:id instead.' });
 }
 
-async function handleDeleteUser(c: Context<{ Bindings: Env }>) {
+async function handleDeleteUser(c: any) {
   const { username } = await c.req.json();
-  await deleteUser(c.env.USERS, username);
-  return c.json({ Code: 1, Message: 'User deleted successfully' });
+  const serviceToken = await getServiceTokenByName(c.env.USERS, username);
+  if (serviceToken) {
+    await deleteServiceToken(c.env.USERS, serviceToken.id);
+  }
+  return c.json({ Code: 1, Message: 'User deleted successfully', Deprecated: 'Use DELETE /api/tokens/:id instead.' });
 }

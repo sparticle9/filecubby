@@ -2,7 +2,7 @@ import { Context } from 'hono'
 import { Env } from '../index'
 
 export async function handleBotCommand(c: Context<{ Bindings: Env }>) {
-  const { BOT_TOKEN, FILE_METADATA } = c.env
+  const { BOT_TOKEN } = c.env
   const update = await c.req.json()
   
   console.log('Received update:', JSON.stringify(update, null, 2))
@@ -20,32 +20,26 @@ export async function handleBotCommand(c: Context<{ Bindings: Env }>) {
         const originalMessage = update.message.reply_to_message
 
         // Check if the original message contains a document, photo, video, or audio
-        let fileId = null
+        let telegramFileId = null
         if (originalMessage.document) {
-          fileId = originalMessage.document.file_id
+          telegramFileId = originalMessage.document.file_id
         } else if (originalMessage.photo) {
           // For photos, get the file_id of the largest size
-          fileId = originalMessage.photo[originalMessage.photo.length - 1].file_id
+          telegramFileId = originalMessage.photo[originalMessage.photo.length - 1].file_id
         } else if (originalMessage.video) {
-          fileId = originalMessage.video.file_id
+          telegramFileId = originalMessage.video.file_id
         } else if (originalMessage.audio) {
-          fileId = originalMessage.audio.file_id
+          telegramFileId = originalMessage.audio.file_id
         }
 
-        if (fileId) {
-          // Check if we have metadata for this file
-          const metadata = await FILE_METADATA.get(`file:${fileId}`, 'json')
-          if (metadata) {
-            const replyText = `File ID: ${fileId}\nYou can use this ID to download or delete the file.`
-            await sendTelegramMessage(BOT_TOKEN, chatId, replyText, messageId)
-          } else {
-            await sendTelegramMessage(BOT_TOKEN, chatId, "This file wasn't uploaded through our service or its metadata is missing.", messageId)
-          }
+        if (telegramFileId) {
+          const replyText = `Telegram file_id: ${telegramFileId}\nFilecubby object IDs are available through captions, manifests, API, or CLI metadata.`
+          await sendTelegramMessage(BOT_TOKEN, chatId, replyText, messageId)
         } else {
-          await sendTelegramMessage(BOT_TOKEN, chatId, "The message you're replying to doesn't contain a file.", messageId)
+          await sendTelegramMessage(BOT_TOKEN, chatId, "The message you're replying to doesn't contain Telegram file media.", messageId)
         }
       } else {
-        await sendTelegramMessage(BOT_TOKEN, chatId, "Please use this command as a reply to a message containing a file.", messageId)
+        await sendTelegramMessage(BOT_TOKEN, chatId, "Please use this command as a reply to a message containing Telegram file media.", messageId)
       }
     } else {
       console.log('Received non-command message')
@@ -70,7 +64,7 @@ async function sendTelegramMessage(botToken: string, chatId: string, text: strin
       reply_to_message_id: replyToMessageId,
     }),
   })
-  const result = await response.json()
+  const result: any = await response.json()
   console.log('Telegram API response:', JSON.stringify(result, null, 2))
   if (!result.ok) {
     console.error('Failed to send message:', result.description)

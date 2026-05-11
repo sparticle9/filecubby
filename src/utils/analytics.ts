@@ -1,11 +1,9 @@
-import { AnalyticsEngineDataset } from '@cloudflare/workers-types';
-
 export async function writeAnalytics(
   analytics: AnalyticsEngineDataset,
   data: {
     action: 'download' | 'upload' | 'error',
-    fileType?: string,
-    fileSize?: number,
+    objectType?: string,
+    objectSize?: number,
     isChunked?: boolean,
     requestReceivedTime?: number,
     metadataFetchTime?: number,
@@ -15,11 +13,11 @@ export async function writeAnalytics(
     errorType?: string
   }
 ) {
-  const { action, fileType, fileSize, isChunked, requestReceivedTime, metadataFetchTime, streamPrepareTime, chunkTimes, totalTime, errorType } = data;
+  const { action, objectType, objectSize, isChunked, requestReceivedTime, metadataFetchTime, streamPrepareTime, chunkTimes, totalTime, errorType } = data;
 
-  const blobs = [action, fileType, isChunked ? 'chunked' : 'single', errorType].filter(Boolean) as string[];
-  const doubles = [fileSize, requestReceivedTime, metadataFetchTime, streamPrepareTime, totalTime].filter((v): v is number => typeof v === 'number');
-  const indexes = [Date.now()];  // Current timestamp as index
+  const blobs = [action, objectType, isChunked ? 'chunked' : 'single', errorType].filter(Boolean) as string[];
+  const doubles = [objectSize, requestReceivedTime, metadataFetchTime, streamPrepareTime, totalTime].filter((v): v is number => typeof v === 'number');
+  const indexes = [Date.now().toString()];
 
   try {
     analytics.writeDataPoint({

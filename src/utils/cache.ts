@@ -15,19 +15,19 @@ const ALLOWED_MIME_TYPES_FOR_CACHING = [
 
 const CACHE_DOMAIN = 'https://worker.domain';
 
-export async function cacheChunk(env: Env, fileId: string, chunkIndex: number, chunkData: ArrayBuffer, mimeType: string): Promise<void> {
-  const cacheKey = `${CACHE_DOMAIN}/chunk/${fileId}/${chunkIndex}`;
-  const cache = caches.default;
+export async function cacheChunk(env: Env, objectId: string, chunkIndex: number, chunkData: ArrayBuffer, mimeType: string): Promise<void> {
+  const cacheKey = `${CACHE_DOMAIN}/chunk/${objectId}/${chunkIndex}`;
+  const cache = (caches as any).default;
   
-  const ttl = (parseInt(env.EDGE_CACHE_CHUNK_TTL, 10) * 3600) || 86400;
-  const maxChunkSize = parseInt(env.EDGE_CACHE_MAX_CHUNK_SIZE, 10) * 1024 * 1024 || 52428800; // Default to 50MB if not set
+  const ttl = (parseInt(String(env.EDGE_CACHE_CHUNK_TTL), 10) * 3600) || 86400;
+  const maxChunkSize = parseInt(String(env.EDGE_CACHE_MAX_CHUNK_SIZE), 10) * 1024 * 1024 || 52428800; // Default to 50MB if not set
   
-  console.log(`Attempting to cache chunk: ${fileId}:${chunkIndex}, size: ${chunkData.byteLength}, MIME type: ${mimeType}`);
+  console.log(`Attempting to cache chunk: ${objectId}:${chunkIndex}, size: ${chunkData.byteLength}, MIME type: ${mimeType}`);
   console.log(`Cache key: ${cacheKey}`);
 
   // Check if the chunk size is below the maximum threshold
   if (chunkData.byteLength > maxChunkSize) {
-    console.log(`Chunk too large to cache for file ID: ${fileId}, chunk index: ${chunkIndex}`);
+    console.log(`Chunk too large to cache for object ID: ${objectId}, chunk index: ${chunkIndex}`);
     return;
   }
 
@@ -45,52 +45,42 @@ export async function cacheChunk(env: Env, fileId: string, chunkIndex: number, c
   });
   
   await cache.put(cacheKey, response);
-  console.log(`Cached chunk: ${fileId}:${chunkIndex} with TTL: ${ttl} seconds`);
+  console.log(`Cached chunk: ${objectId}:${chunkIndex} with TTL: ${ttl} seconds`);
 }
 
-export async function getCachedChunk(env: Env, fileId: string, chunkIndex: number): Promise<ArrayBuffer | null> {
-  const cacheKey = `${CACHE_DOMAIN}/chunk/${fileId}/${chunkIndex}`;
-  const cache = caches.default;
+export async function getCachedChunk(env: Env, objectId: string, chunkIndex: number): Promise<ArrayBuffer | null> {
+  const cacheKey = `${CACHE_DOMAIN}/chunk/${objectId}/${chunkIndex}`;
+  const cache = (caches as any).default;
   console.log(`Attempting to retrieve cached chunk with key: ${cacheKey}`);
   const response = await cache.match(cacheKey);
   
   if (response) {
-    console.log(`Cache hit for chunk: ${fileId}:${chunkIndex}`);
+    console.log(`Cache hit for chunk: ${objectId}:${chunkIndex}`);
     return await response.arrayBuffer();
   }
   
-  console.log(`Cache miss for chunk: ${fileId}:${chunkIndex}`);
+  console.log(`Cache miss for chunk: ${objectId}:${chunkIndex}`);
   return null;
 }
 
 export async function clearAllCache(): Promise<void> {
-  const cache = caches.default;
-  const keys = await cache.keys();
-  for (const key of keys) {
-    await cache.delete(key);
-  }
-  console.log('All cache cleared');
+  throw new Error('Cloudflare Cache API does not support listing all keys');
 }
 
 export async function getAllCacheKeys(): Promise<string[]> {
-  const cache = caches.default;
-  const keys = await cache.keys();
-  return keys.map(key => key.url);
+  return [];
 }
 
 export async function getCacheKeyCount(): Promise<number> {
-  const cache = caches.default;
-  const keys = await cache.keys();
-  return keys.length;
+  return 0;
 }
 
-export async function checkGlobalCacheStatus(env: Env, fileId: string): Promise<void> {
-    const cache = caches.default;
+export async function checkGlobalCacheStatus(env: Env, objectId: string): Promise<void> {
+    const cache = (caches as any).default;
     const chunkCount = 10; // Adjust based on your typical file chunk count
   
     for (let i = 0; i < chunkCount; i++) {
-      const cacheKey = new Request(`${CACHE_DOMAIN}/chunk/${fileId}/${i}`);
-      const response = await cache.match(cacheKey);
+      const response = await cache.match(`${CACHE_DOMAIN}/chunk/${objectId}/${i}`);
       if (response) {
         const data = await response.arrayBuffer();
         console.log(`Global cache hit for chunk ${i}, size: ${data.byteLength}`);

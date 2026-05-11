@@ -1,9 +1,8 @@
 general:
-  baseUrl: https://tgpan.example.com/api/
-  token: <your token>
-  timeout: 10
-  MAX_CHUNK_SIZE: 20 # in MB
+  baseUrl: http://localhost:8787/api/
+  token: <service-or-admin-token>
+  timeout: 30
+  MAX_CHUNK_SIZE: 19 # in MiB, public Bot API download-safe
 
 image:
-  # specific instructions for image upload, will improve over time
   MAX_IMAGE_SIZE: 10 # in MB
