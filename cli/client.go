@@ -28,6 +28,9 @@ func apiBaseURL() (string, error) {
 	} else if envBase := strings.TrimSpace(os.Getenv("FILECUBBY_URL")); envBase != "" && base == "http://localhost:8787/api/" {
 		base = envBase
 	}
+	if cliBase := strings.TrimSpace(flagBaseURL); cliBase != "" {
+		base = cliBase
+	}
 	if base == "" {
 		return "", fmt.Errorf("missing API base URL")
 	}
@@ -47,6 +50,9 @@ func apiToken() (string, error) {
 	token := strings.TrimSpace(viper.GetString("general.token"))
 	if envToken := strings.TrimSpace(os.Getenv("FILECUBBY_TOKEN")); envToken != "" {
 		token = envToken
+	}
+	if cliToken := strings.TrimSpace(flagToken); cliToken != "" {
+		token = cliToken
 	}
 	if token == "" {
 		return "", fmt.Errorf("missing token; set general.token, FILECUBBY_TOKEN, or --token")

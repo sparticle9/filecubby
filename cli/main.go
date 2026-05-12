@@ -15,6 +15,8 @@ import (
 var cfgFile string
 var verbose bool
 var jsonOutput bool
+var flagBaseURL string
+var flagToken string
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -27,8 +29,8 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ~/.config/filecubby/config.yml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "print machine-readable JSON")
-	rootCmd.PersistentFlags().String("base-url", "", "Filecubby API base URL")
-	rootCmd.PersistentFlags().String("token", "", "service or admin token")
+	rootCmd.PersistentFlags().StringVar(&flagBaseURL, "base-url", "", "Filecubby API base URL")
+	rootCmd.PersistentFlags().StringVar(&flagToken, "token", "", "service or admin token")
 
 	must(viper.BindPFlag("general.baseUrl", rootCmd.PersistentFlags().Lookup("base-url")))
 	must(viper.BindPFlag("general.token", rootCmd.PersistentFlags().Lookup("token")))
