@@ -65,8 +65,8 @@ In Cloudflare's setup form:
 
 - Set `BOT_TOKEN` to the token from `@BotFather`.
 - Set `ADMIN_TOKEN` to your generated admin token.
-- Set `CHAT_ID` if you know it; Cloudflare saves it as a Worker secret/env
-  binding. For a private bot DM, you may leave it blank after sending `/start`.
+- Set `CHAT_ID` in the non-secret options if you know it. For a private bot DM,
+  you may leave it blank after sending `/start`.
   Filecubby discovers the chat on first upload and caches it in KV. Set
   `CHAT_ID` explicitly for groups, channels, or bots that can see more than one
   chat.
@@ -84,7 +84,7 @@ If the first upload says `CHAT_ID` is not configured, send `/start` to the bot
 in Telegram and retry the upload. No redeploy is required. A Worker cannot write
 back to its own environment bindings at runtime, so auto-discovered chat IDs are
 cached in KV; values entered in Cloudflare's setup form are saved as Worker
-secrets/env bindings.
+environment variables.
 
 ## Fork And Deploy
 
@@ -97,10 +97,11 @@ Minimum setup in your fork:
 
 - Environment variable: `CLOUDFLARE_ACCOUNT_ID`
 - Required secrets: `CLOUDFLARE_API_TOKEN`, `BOT_TOKEN`
-- Optional secrets: `CHAT_ID`, `ADMIN_TOKEN`, `FILECUBBY_TOKEN`
+- Optional secrets: `ADMIN_TOKEN`, `FILECUBBY_TOKEN`
+- Optional variable: `CHAT_ID`
 
 Run **Actions -> Deploy Filecubby -> Run workflow**. `CHAT_ID` follows the same
-rules as the button path: set it to save it as a Worker secret, or leave it
+rules as the button path: set it to save it as a Worker variable, or leave it
 blank for private-DM discovery after sending `/start` to the bot.
 
 To update later, sync your fork from `sparticle9/filecubby`, review the changes,

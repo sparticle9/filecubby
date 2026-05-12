@@ -14,8 +14,8 @@ Minimum user steps:
 2. Send one message to the new bot, such as `/start`, before the first upload.
 3. Click the deploy button.
 4. In Cloudflare's setup UI, set `BOT_TOKEN` and `ADMIN_TOKEN`.
-5. Set `CHAT_ID` if known so Cloudflare saves it as a Worker secret/env
-   binding. For a private bot DM, it can be left blank after sending `/start`;
+5. Set `CHAT_ID` in the non-secret options if known. For a private bot DM, it
+   can be left blank after sending `/start`;
    Filecubby discovers it on first upload and caches it in KV. Set it
    explicitly for groups, channels, or bots visible in more than one chat.
 6. For each KV namespace prompt, choose **Create new**. If Cloudflare pre-fills
@@ -35,7 +35,7 @@ If a user forgets to message the bot before uploading, the deploy still
 succeeds. The first upload fails with an instruction to send a message to the
 bot and retry. No redeploy is required. Runtime discovery cannot write back to
 Worker environment bindings, so discovered chat IDs are stored in KV; values
-entered in the setup form remain Worker secrets/env bindings.
+entered in the setup form remain Worker environment variables.
 
 ## Local Operator Setup
 
@@ -62,17 +62,17 @@ FILECUBBY_URL=http://localhost:8787
 FILECUBBY_TOKEN=
 ```
 
-Local setup uploads `CHAT_ID` as a Worker secret when it is configured or
-discoverable. If it is blank, setup skips that secret and the deployed Worker
-uses runtime discovery on first upload.
+Local setup uploads `CHAT_ID` as a Worker secret only when it is configured or
+discoverable through the local helper. In the deploy-button path, `CHAT_ID` is
+a non-secret Worker environment variable from `wrangler.toml`.
 
 Telegram `BOT_TOKEN` must come from `@BotFather`. `CHAT_ID` is optional for a
 private bot DM when exactly one chat is visible to Telegram `getUpdates`; send
 one message to the bot before the first upload. Set `CHAT_ID` explicitly for
-groups, channels, or bots visible in multiple chats. If supplied during deploy
-or with `wrangler secret put CHAT_ID`, it is a Worker secret/env binding. If
-auto-discovered at runtime, it is cached in KV because Workers cannot mutate
-their own environment bindings.
+groups, channels, or bots visible in multiple chats. If supplied in the
+deploy-button form, it is a Worker environment variable. If auto-discovered at
+runtime, it is cached in KV because Workers cannot mutate their own environment
+bindings.
 
 ## Fork And Deploy
 
@@ -92,7 +92,6 @@ Minimum environment secrets:
 
 Optional environment secrets:
 
-- `CHAT_ID`
 - `ADMIN_TOKEN`
 - `FILECUBBY_TOKEN`
 
@@ -104,9 +103,8 @@ Workflow inputs worth setting:
 - `custom_domain`: optional hostname if the user already has a Cloudflare zone.
 - `dry_run`: set true for a non-mutating validation pass.
 
-`CHAT_ID` follows the same model as the deploy-button path: set it to save it
-as a Worker secret/env binding, or leave it blank for private-DM discovery after
-sending `/start` to the bot.
+`CHAT_ID` can be set as an optional environment secret for this workflow, or
+left blank for private-DM discovery after sending `/start` to the bot.
 
 To update later, sync the fork from `sparticle9/filecubby`, review the incoming
 changes, and run the workflow again. This is still more work than the deploy

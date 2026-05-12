@@ -26,6 +26,7 @@ EDGE_CACHE_CHUNK_TTL = 24  # in hours
 EDGE_CACHE_MAX_CHUNK_SIZE = 50
 TELEGRAM_ORGANIZATION_MODE = "caption" # off, caption, or manifest
 FILECUBBY_MARKER = "fc"
+CHAT_ID = "" # Optional non-secret Telegram chat id. Leave blank for runtime discovery.
 
 [triggers]
 crons = ["0 0 * * *"] # Run daily at midnight

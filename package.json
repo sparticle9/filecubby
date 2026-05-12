@@ -37,7 +37,7 @@
         "description": "Private admin bearer token for Filecubby. Generate a long random value, for example with `openssl rand -hex 32`, and store it somewhere private."
       },
       "CHAT_ID": {
-        "description": "Optional Telegram chat ID saved as a Worker secret/env binding. For a private bot DM, you may leave this blank after sending `/start` to the bot; Filecubby will discover and cache it. Set explicitly for groups, channels, or bots visible in multiple chats."
+        "description": "Optional non-secret Telegram chat ID. For a private bot DM, leave blank after sending `/start` to the bot; Filecubby will discover and cache it. Set explicitly for groups, channels, or bots visible in multiple chats."
       },
       "TASKS": {
         "description": "KV namespace for background task markers and bootstrap cache. Recommended new namespace name: `filecubby-tasks`."
