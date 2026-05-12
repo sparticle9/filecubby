@@ -50,9 +50,6 @@
       },
       "FILE_DOWNLOAD_INFO": {
         "description": "KV namespace for cached Telegram file download metadata. Recommended new namespace name: `filecubby-download-info`."
-      },
-      "ANALYTICS_ENGINE": {
-        "description": "Analytics Engine dataset for request and transfer telemetry."
       }
     }
   },

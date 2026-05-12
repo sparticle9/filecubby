@@ -38,7 +38,6 @@ the bytes for HTTP download or media streaming.
 
 - Cloudflare Workers with Hono
 - Cloudflare KV namespaces: `USERS`, `FILES`, `FILE_DOWNLOAD_INFO`, `TASKS`
-- Cloudflare Analytics Engine
 - Telegram Bot API document storage
 - Node 22, pnpm, project-local Wrangler
 - Go CLI installed by `just install`

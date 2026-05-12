@@ -31,9 +31,5 @@ CHAT_ID = "" # Optional non-secret Telegram chat id. Leave blank for runtime dis
 [triggers]
 crons = ["0 0 * * *"] # Run daily at midnight
 
-[[analytics_engine_datasets]]
-binding = "ANALYTICS_ENGINE"
-dataset = "filecubby_analytics"
-
 [placement]
 mode = "smart"

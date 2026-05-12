@@ -37,28 +37,36 @@ Do not log:
 - private hostnames or operator domains
 - local filesystem paths that reveal a user or machine name
 
-## Analytics Engine
+## Next Observability Plan
 
-The Worker can bind Cloudflare Analytics Engine as `ANALYTICS_ENGINE`.
-Recommended dimensions are route family, status class, cache status, upload mode,
-and coarse object-size bucket. Keep dimensions low-cardinality and avoid object
-ids, token ids, chat ids, or domains.
+The default deployment intentionally does not provision Analytics Engine. Basic
+operators should not have to choose another Cloudflare resource just to upload
+and download files.
 
-Example query shape:
+For optional analytics, prefer Cloudflare Workers OpenTelemetry export to a
+provider with a usable free tier, such as Grafana Cloud Free or Axiom Free.
+Keep this opt-in:
 
-```sql
-SELECT
-  blob1 AS route_family,
-  blob2 AS status_class,
-  COUNT() AS requests
-FROM filecubby_analytics
-WHERE timestamp > now() - INTERVAL '1' DAY
-GROUP BY route_family, status_class
-ORDER BY requests DESC
+- users configure the OTel destination in the Cloudflare dashboard
+- `wrangler.toml` adds the matching destination names only when the user wants
+  external observability
+- emitted logs/traces keep the safe event shape above and avoid object ids,
+  token ids, chat ids, domains, and Cloudflare account/resource ids
+
+Example future config shape:
+
+```toml
+[observability.traces]
+enabled = true
+destinations = ["grafana-traces"]
+
+[observability.logs]
+enabled = true
+destinations = ["grafana-logs"]
 ```
 
-Use dataset names that match your deployment. Keep account-specific values in
-private configuration, not in the repository.
+Use the equivalent Axiom destination names for Axiom Free. Do not make either
+provider mandatory in the OSS template.
 
 ## Error Handling
 

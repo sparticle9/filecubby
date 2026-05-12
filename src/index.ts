@@ -169,7 +169,6 @@ export interface Env {
   CACHE_CHUNK_URL_TIMEOUT: string | number;
   EDGE_CACHE_CHUNK_TTL: string | number;
   EDGE_CACHE_MAX_CHUNK_SIZE: string | number;
-  ANALYTICS_ENGINE: AnalyticsEngineDataset;
   TG_USER_AGENT: string;
   ADMIN_TOKEN: string;
   CACHE_CHUNK_EDGE_ON_UPLOAD: string;

@@ -257,7 +257,6 @@ function writeWorkerConfig({ workerName, accountId, customDomain, vars, analytic
     lines.push(`${key} = ${typeof value === 'number' ? value : tomlString(value)}`);
   }
   lines.push('', '[triggers]', 'crons = ["0 0 * * *"]', '');
-  lines.push('[[analytics_engine_datasets]]', 'binding = "ANALYTICS_ENGINE"', `dataset = ${tomlString(analyticsDataset)}`, '');
   lines.push('[placement]', 'mode = "smart"', '');
 
   writeFileSync(outPath, lines.join('\n'));
@@ -337,7 +336,6 @@ async function main() {
     throw new Error('ADMIN_TOKEN is missing and the resolved Telegram chat is not private. Set ADMIN_TOKEN explicitly or use a private bot DM for bootstrap delivery.');
   }
   const publicUrl = optional('FILECUBBY_URL');
-  const analyticsDataset = optional('FILECUBBY_ANALYTICS_DATASET', `${workerName.replace(/[^a-zA-Z0-9_]/g, '_')}_analytics`);
 
   const outDir = outPath.includes('/') ? outPath.slice(0, outPath.lastIndexOf('/')) : '';
   if (outDir && !existsSync(outDir)) mkdirSync(outDir, { recursive: true });
@@ -349,7 +347,6 @@ async function main() {
     accountId,
     customDomain,
     kvIds,
-    analyticsDataset,
     vars: {
       TG_USER_AGENT: optional('TG_USER_AGENT', 'Mozilla/5.0 (Linux; Android 13; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36'),
       MAX_CHUNK_SIZE: Number(optional('MAX_CHUNK_SIZE', '19922944')),
