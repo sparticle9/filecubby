@@ -95,13 +95,18 @@ repo, configure GitHub Environment secrets in the fork, then run the manual
 
 Minimum setup in your fork:
 
-- Environment variable: `CLOUDFLARE_ACCOUNT_ID`
-- Required secrets: `CLOUDFLARE_API_TOKEN`, `BOT_TOKEN`
+- Workflow input or Environment variable: `CLOUDFLARE_ACCOUNT_ID`
+- Required Environment secrets: `CLOUDFLARE_API_TOKEN`, `BOT_TOKEN`
 - Optional secrets: `ADMIN_TOKEN`, `FILECUBBY_TOKEN`
-- Optional variable: `CHAT_ID`
+- Optional workflow input or Environment variable: `CHAT_ID`
+
+GitHub does not securely prompt for secrets in the **Run workflow** form. Before
+running the workflow, create the `production` Environment in your fork and add
+the two required secrets there. The workflow form can accept non-secret values
+like account ID and chat ID.
 
 Run **Actions -> Deploy Filecubby -> Run workflow**. `CHAT_ID` follows the same
-rules as the button path: set it to save it as a Worker variable, or leave it
+rules as the button path: set it as a non-secret input/variable, or leave it
 blank for private-DM discovery after sending `/start` to the bot.
 
 To update later, sync your fork from `sparticle9/filecubby`, review the changes,

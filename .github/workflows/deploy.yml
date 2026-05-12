@@ -4,9 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       github_environment:
-        description: "GitHub Environment holding Cloudflare and Telegram secrets"
+        description: "GitHub Environment holding CLOUDFLARE_API_TOKEN and BOT_TOKEN secrets"
         required: true
         default: "production"
+      cloudflare_account_id:
+        description: "Cloudflare account ID; optional if environment variable CLOUDFLARE_ACCOUNT_ID is set"
+        required: false
+        default: ""
+      chat_id:
+        description: "Optional non-secret Telegram chat ID; leave blank for private-DM discovery"
+        required: false
+        default: ""
       worker_name:
         description: "Worker name"
         required: true
@@ -68,13 +76,35 @@ jobs:
 
       - run: pnpm run typecheck
 
+      - name: Check required deployment credentials
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare_account_id || vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          INPUT_GITHUB_ENVIRONMENT: ${{ inputs.github_environment }}
+        run: |
+          missing=0
+          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Missing Cloudflare account ID. Fill the workflow input cloudflare_account_id or set GitHub Environment variable CLOUDFLARE_ACCOUNT_ID."
+            missing=1
+          fi
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::Missing GitHub Environment secret CLOUDFLARE_API_TOKEN. GitHub cannot securely prompt for this in the Run workflow form; create it under Settings > Environments > ${INPUT_GITHUB_ENVIRONMENT} > Secrets."
+            missing=1
+          fi
+          if [ -z "$BOT_TOKEN" ]; then
+            echo "::error::Missing GitHub Environment secret BOT_TOKEN. GitHub cannot securely prompt for this in the Run workflow form; create it under Settings > Environments > ${INPUT_GITHUB_ENVIRONMENT} > Secrets."
+            missing=1
+          fi
+          exit "$missing"
+
       - name: Provision and deploy
         run: node scripts/provisionCloudflare.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
         env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare_account_id || vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
+          CHAT_ID: ${{ inputs.chat_id || vars.CHAT_ID || secrets.CHAT_ID }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
           FILECUBBY_TOKEN: ${{ secrets.FILECUBBY_TOKEN }}
           FILECUBBY_WORKER_NAME: ${{ inputs.worker_name }}

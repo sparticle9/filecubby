@@ -84,7 +84,7 @@ manual **Deploy Filecubby** workflow.
 
 Minimum environment variable:
 
-- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_ACCOUNT_ID`, or fill the `cloudflare_account_id` workflow input
 
 Minimum environment secrets:
 
@@ -96,16 +96,26 @@ Optional environment secrets:
 - `ADMIN_TOKEN`
 - `FILECUBBY_TOKEN`
 
+GitHub does not securely prompt for secrets in the **Run workflow** form.
+Create the `production` Environment in the fork before running the workflow,
+then add `CLOUDFLARE_API_TOKEN` and `BOT_TOKEN` under Environment secrets. The
+workflow form can accept non-secret values like Cloudflare account ID and
+Telegram chat ID.
+
 Workflow inputs worth setting:
 
 - `github_environment`: the environment that stores the values above.
+- `cloudflare_account_id`: Cloudflare account ID, if not stored as an
+  environment variable.
+- `chat_id`: optional non-secret Telegram chat ID, if known.
 - `worker_name`: Worker name, usually `filecubby`.
 - `namespace_prefix`: KV namespace prefix. Leave blank to use `worker_name`.
 - `custom_domain`: optional hostname if the user already has a Cloudflare zone.
 - `dry_run`: set true for a non-mutating validation pass.
 
-`CHAT_ID` can be set as an optional environment secret for this workflow, or
-left blank for private-DM discovery after sending `/start` to the bot.
+`CHAT_ID` can be set as a workflow input or environment variable for this
+workflow, or left blank for private-DM discovery after sending `/start` to the
+bot.
 
 To update later, sync the fork from `sparticle9/filecubby`, review the incoming
 changes, and run the workflow again. This is still more work than the deploy
