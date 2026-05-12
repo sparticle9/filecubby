@@ -23,10 +23,11 @@ Minimum user steps:
    `filecubby-tasks`, `filecubby-users`, `filecubby-files`, and
    `filecubby-download-info`.
 
-Cloudflare provisions the Worker and KV namespaces from `wrangler.toml`, and
-prompts for Worker secrets from `.env.example`. Custom domains are optional and
-should be attached after the first deploy if the user hosts a suitable zone in
-their Cloudflare account.
+Cloudflare prompts for Worker secrets from `.env.example`. The deploy command
+resolves existing KV namespaces first, creates missing ones, writes an ignored
+generated Wrangler config with IDs, and deploys that generated config. Custom
+domains are optional and should be attached after the first deploy if the user
+hosts a suitable zone in their Cloudflare account.
 
 The checked-in `wrangler.toml` is intentionally template-safe: no `account_id`,
 no production route, and no account-specific KV namespace IDs.

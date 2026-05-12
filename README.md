@@ -124,8 +124,9 @@ CLI config private.
 
 For a fresh public deploy-button install, keep the checked-in `wrangler.toml`
 account-neutral. It intentionally does not contain an `account_id`, custom
-route, or KV namespace IDs. Cloudflare's deploy-button flow provisions the KV
-namespaces from the binding names.
+route, or KV namespace IDs. The deploy script resolves existing KV namespaces
+first, creates missing ones, writes an ignored generated Wrangler config with
+IDs, and deploys that generated config.
 
 For a custom domain, use a hostname on your own Cloudflare-managed zone, for
 example:
