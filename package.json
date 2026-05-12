@@ -40,16 +40,16 @@
         "description": "Optional Telegram chat ID saved as a Worker secret/env binding. For a private bot DM, you may leave this blank after sending `/start` to the bot; Filecubby will discover and cache it. Set explicitly for groups, channels, or bots visible in multiple chats."
       },
       "TASKS": {
-        "description": "KV namespace for background task markers and bootstrap cache."
+        "description": "KV namespace for background task markers and bootstrap cache. Recommended new namespace name: `filecubby-tasks`."
       },
       "USERS": {
-        "description": "KV namespace for Filecubby service-token metadata."
+        "description": "KV namespace for Filecubby service-token metadata. Recommended new namespace name: `filecubby-users`."
       },
       "FILES": {
-        "description": "KV namespace for object metadata."
+        "description": "KV namespace for object metadata. Recommended new namespace name: `filecubby-files`."
       },
       "FILE_DOWNLOAD_INFO": {
-        "description": "KV namespace for cached Telegram file download metadata."
+        "description": "KV namespace for cached Telegram file download metadata. Recommended new namespace name: `filecubby-download-info`."
       },
       "ANALYTICS_ENGINE": {
         "description": "Analytics Engine dataset for request and transfer telemetry."

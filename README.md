@@ -48,8 +48,9 @@ the bytes for HTTP download or media streaming.
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sparticle9/filecubby)
 
 This is the primary install path for this public repository. It does not
-require Cloudflare or Telegram secrets in the GitHub repo. Cloudflare clones the
-project into your GitHub or GitLab account, provisions Worker resources in your
+require Cloudflare or Telegram secrets in this source repo. Cloudflare asks you
+to connect a GitHub or GitLab account, creates a copy of the project there,
+connects that repo to Workers Builds, provisions Worker resources in your
 Cloudflare account, and prompts for Worker secrets from `.env.example`.
 
 Before clicking:
@@ -71,6 +72,10 @@ In Cloudflare's setup form:
   chat.
 - Use the default `*.workers.dev` URL unless you want to add a custom domain
   after the first deploy.
+- Cloudflare will ask about each KV namespace. Choose **Create new**. If the
+  form pre-fills every namespace as `filecubby`, rename them to distinct names:
+  `filecubby-tasks`, `filecubby-users`, `filecubby-files`, and
+  `filecubby-download-info`.
 
 After deploy, use `Authorization: Bearer <ADMIN_TOKEN>` for API or CLI calls.
 Custom domains are optional and can be attached later in Cloudflare.

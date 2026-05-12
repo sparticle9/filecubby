@@ -4,7 +4,9 @@
 
 Use the README's **Deploy to Cloudflare** button for public installs. This path
 keeps Cloudflare account IDs, Cloudflare API tokens, and Telegram bot secrets
-out of the GitHub repository.
+out of this source repository. Cloudflare still asks the user to connect a
+GitHub or GitLab account so it can create a copy of the project and connect
+that copy to Workers Builds.
 
 Minimum user steps:
 
@@ -16,6 +18,10 @@ Minimum user steps:
    binding. For a private bot DM, it can be left blank after sending `/start`;
    Filecubby discovers it on first upload and caches it in KV. Set it
    explicitly for groups, channels, or bots visible in more than one chat.
+6. For each KV namespace prompt, choose **Create new**. If Cloudflare pre-fills
+   every namespace name as `filecubby`, rename them to distinct names:
+   `filecubby-tasks`, `filecubby-users`, `filecubby-files`, and
+   `filecubby-download-info`.
 
 Cloudflare provisions the Worker and KV namespaces from `wrangler.toml`, and
 prompts for Worker secrets from `.env.example`. Custom domains are optional and
