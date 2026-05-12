@@ -80,6 +80,33 @@ function serviceTokenJson(id, name, note) {
   return JSON.stringify({ id, name, enabled: true, createdAt: now, updatedAt: now, note });
 }
 
+function escapeMarkdownV2Text(value) {
+  return String(value)
+    .replaceAll('\\', '\\\\')
+    .replaceAll('_', '\\_')
+    .replaceAll('*', '\\*')
+    .replaceAll('[', '\\[')
+    .replaceAll(']', '\\]')
+    .replaceAll('(', '\\(')
+    .replaceAll(')', '\\)')
+    .replaceAll('~', '\\~')
+    .replaceAll('`', '\\`')
+    .replaceAll('>', '\\>')
+    .replaceAll('#', '\\#')
+    .replaceAll('+', '\\+')
+    .replaceAll('-', '\\-')
+    .replaceAll('=', '\\=')
+    .replaceAll('|', '\\|')
+    .replaceAll('{', '\\{')
+    .replaceAll('}', '\\}')
+    .replaceAll('.', '\\.')
+    .replaceAll('!', '\\!');
+}
+
+function escapeMarkdownV2Code(value) {
+  return String(value).replaceAll('\\', '\\\\').replaceAll('`', '\\`');
+}
+
 async function telegramJson(botToken, method, body) {
   const response = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
     method: body ? 'POST' : 'GET',
@@ -138,20 +165,27 @@ async function validateChat(botToken, chatId) {
 async function deliverBootstrapCredentials(botToken, chatId, workerUrl, adminToken, filecubbyToken, generatedFilecubbyToken) {
   if (dryRun) return;
   const lines = [
-    'Filecubby bootstrap credentials',
-    '',
-    `Worker URL: ${workerUrl || 'not detected'}`,
-    `ADMIN_TOKEN: ${adminToken}`,
+    `FILECUBBY_URL=${workerUrl || 'not detected'}`,
+    `ADMIN_TOKEN=${adminToken}`,
   ];
   if (generatedFilecubbyToken) {
-    lines.push('FILECUBBY_TOKEN defaults to ADMIN_TOKEN for this bootstrap.');
+    lines.push('FILECUBBY_TOKEN=<same as ADMIN_TOKEN>');
   } else if (filecubbyToken && filecubbyToken !== adminToken) {
-    lines.push(`FILECUBBY_TOKEN: ${filecubbyToken}`);
+    lines.push(`FILECUBBY_TOKEN=${filecubbyToken}`);
   }
-  lines.push('', 'Store these outside Telegram if you intend to keep using this deployment.');
+  const codeBlock = escapeMarkdownV2Code(lines.join('\n'));
   await telegramJson(botToken, 'sendMessage', {
     chat_id: chatId,
-    text: lines.join('\n'),
+    text: [
+      escapeMarkdownV2Text('Filecubby bootstrap credentials'),
+      '',
+      '```',
+      codeBlock,
+      '```',
+      '',
+      escapeMarkdownV2Text('Store these outside Telegram if you intend to keep using this deployment.'),
+    ].join('\n'),
+    parse_mode: 'MarkdownV2',
     disable_notification: true,
   });
 }

@@ -164,7 +164,7 @@ async function validateTelegram(env, mutate) {
 }
 
 function getWorkerUrl(env) {
-  const configured = env.get('FILECUBBY_URL') || 'https://filecubby.<your-cloudflare-domain>';
+  const configured = env.get('FILECUBBY_URL') || 'http://localhost:8787';
   return configured.replace(/\/$/, '');
 }
 
@@ -285,7 +285,7 @@ async function setup() {
     changed = true;
   }
   if (!env.get('FILECUBBY_URL')) {
-    env.set('FILECUBBY_URL', 'https://filecubby.<your-cloudflare-domain>');
+    env.set('FILECUBBY_URL', 'http://localhost:8787');
     changed = true;
   }
   if (!env.get('CHAT_ID') && env.get('BOT_TOKEN')) {

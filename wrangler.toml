@@ -1,12 +1,7 @@
 name = "filecubby"
 main = "src/index.ts"
-account_id = ""
 compatibility_date = "2026-05-11"
 workers_dev = true
-
-routes = [
-  { pattern = "filecubby.<your-cloudflare-domain>", custom_domain = true }
-]
 
 # KV namespaces section
 [[kv_namespaces]]
@@ -49,7 +44,6 @@ mode = "smart"
 
 [env.staging]
 name = "filecubby-staging"
-account_id = ""
 workers_dev = true
 
 [[env.staging.kv_namespaces]]

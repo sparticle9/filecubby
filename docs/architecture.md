@@ -8,11 +8,11 @@ Worker is the object gateway.
 
 - Worker: `src/index.ts`
 - Framework: Hono on Cloudflare Workers
-- Package manager: global `pnpm`
+- Package manager: `pnpm`
 - Deploy tool: project-local Wrangler
 - Node: 22 LTS
 - Worker name: `filecubby`
-- Production URL: `https://filecubby.<your-cloudflare-domain>`
+- Custom domain: use a hostname on the operator's own Cloudflare-managed zone
 - Analytics dataset: `filecubby_analytics`
 
 ## System Map
@@ -42,26 +42,22 @@ flowchart LR
   worker --> player
 ```
 
-## Canonical Terms
+## Terms
 
-- Owner: the person who owns the Cloudflare account, Telegram account, bot, and
-  service tokens.
+- Owner: the person who owns the Cloudflare account, Telegram account, bot,
+  storage chat, and service tokens.
 - System: one Filecubby deployment operated by that owner.
-- Namespace: an object namespace owned by the system. Version 1 has exactly one
-  namespace: `default`.
-- Collection: a named grouping under namespace `default`; useful for purpose or
-  type groupings such as health, tech, food, audio, or receipts.
-- Object: one logical stored item with a unique id across namespace `default`.
-- Object metadata: name, MIME type, size, upload timestamps, path, tags,
-  collection ids, chunk ids, and recovery message ids.
+- Namespace: an object namespace owned by the system. Version 1 uses `default`.
+- Collection: a named grouping under namespace `default`.
+- Object: one logical stored item with a unique id.
 - Chunk: one Telegram document that stores part or all of an object.
 - Byte store: Telegram Bot API documents in the owner-controlled storage chat.
 - Filesystem/index: Cloudflare KV records that make objects searchable and
   downloadable.
 - Recovery record: optional Telegram caption or manifest text that can rebuild
-  missing KV metadata when it is still visible through Bot API updates.
+  missing KV metadata when still visible through Bot API updates.
 
-## Object Model
+## Storage Model
 
 ```text
 owner
@@ -76,19 +72,13 @@ owner
           chunks[]
 ```
 
-Paths and tags are lightweight object metadata. They are intentionally not a
-full filesystem permission model. Collections are named groupings in the same
-single namespace and are not access-control boundaries.
+Cloudflare KV bindings:
 
-## Storage
-
-- `FILES`: canonical object metadata at `object:default:<objectId>`,
-  collection metadata at `collection:default:<collectionId>`, and slug indexes
-  at `collection-slug:default:<slug>`.
+- `FILES`: canonical object metadata, collection metadata, and collection slug
+  indexes.
 - `USERS`: named service-token metadata and token indexes.
 - `FILE_DOWNLOAD_INFO`: Telegram chunk URL cache and download helper metadata.
 - `TASKS`: task namespace retained for scheduled/background workflows.
-- Telegram chat: object-byte backing store through the bot API.
 
 `FILES` is the source of truth for object organization. Telegram `file_id`
 values are stored as chunk ids; the Worker resolves those ids to Telegram file
@@ -96,12 +86,14 @@ URLs when serving downloads.
 
 ## Auth Model
 
-The project is intentionally single-tenant:
+Filecubby is intentionally single-tenant:
 
 - One Telegram bot/chat stores all object chunks.
 - `ADMIN_TOKEN` protects token-management APIs.
-- Many named service tokens can upload, list, patch, delete, and download from
-  the same storage tenant.
+- Named service tokens can upload, list, patch, delete, and download from the
+  same storage tenant.
+- Collections and paths are organization primitives, not access-control
+  boundaries.
 - There is no RBAC.
 
 Service-token storage uses:
@@ -113,8 +105,6 @@ Service-token storage uses:
 The plaintext token value is returned only by `POST /api/tokens`.
 
 ## Object Metadata
-
-Current metadata shape:
 
 ```ts
 interface ObjectMetadata {
@@ -141,11 +131,10 @@ interface ObjectMetadata {
 }
 ```
 
-`chunkSize` is saved when known so ranged media streaming can map byte offsets
-to Telegram chunks accurately. `path`, `tags`, and `collectionIds` are the
-organization primitives.
+`chunkSize` lets ranged media streaming map byte offsets to Telegram chunks.
+`path`, `tags`, and `collectionIds` are lightweight organization fields.
 
-Collection metadata is lightweight:
+Collection metadata is similarly small:
 
 ```ts
 interface Collection {
@@ -161,11 +150,47 @@ interface Collection {
 }
 ```
 
+## Request Surface
+
+Public routes:
+
+- `GET /test`
+- `GET /openapi.json`
+- `GET /console`
+- `GET /d/:objectId`
+- `HEAD /d/:objectId`
+- `GET /d/:objectId/partial`
+- `POST /api/upload/image`
+
+Service-token routes:
+
+- `POST /api/upload`
+- `POST /api/upload/finalize/:objectId`
+- `GET /api/upload/status/:objectId`
+- `GET /api/objects`
+- `GET /api/objects/:id`
+- `PATCH /api/objects/:id`
+- `GET /api/collections`
+- `POST /api/collections`
+- `GET /api/collections/:id`
+- `PATCH /api/collections/:id`
+- `DELETE /api/collections/:id`
+- `POST /api/repair/import-telegram`
+- `POST /api/del`
+
+Admin-token routes:
+
+- `GET /api/tokens`
+- `POST /api/tokens`
+- `PATCH /api/tokens/:id`
+- `DELETE /api/tokens/:id`
+- `POST /api/cache/clear`
+- `GET /api/cache/status`
+
 ## Upload Flow
 
-Small uploads go through `POST /api/upload` as multipart form data. The binary
-field may remain `file` because it is the submitted blob. Object metadata fields
-use object terminology:
+Small uploads go through `POST /api/upload` as multipart form data. Object
+metadata fields use object terminology:
 
 - `objectName`
 - `objectType`
@@ -197,33 +222,15 @@ precise `Content-Range` and only fetch the required chunks.
 Inline display is allowed for common media and document types, including MP4,
 WebM, MP3/MPEG audio, images, JSON, PDF, and text.
 
-## Caching
-
-The active performance path has two layers:
-
-- Telegram chunk URL caching in `FILE_DOWNLOAD_INFO`.
-- Optional chunk-body caching through the Cloudflare Cache API.
-
-Relevant `wrangler.toml` vars:
-
-- `CACHE_CHUNK_URL_MAX_RETRY`
-- `CACHE_CHUNK_URL_TIMEOUT`
-- `CACHE_CHUNK_EDGE_ON_UPLOAD`
-- `EDGE_CACHE_CHUNK_TTL`
-- `EDGE_CACHE_MAX_CHUNK_SIZE`
-
-`CACHE_CHUNK_EDGE_ON_UPLOAD` is currently false, so upload completion does not
-block on edge chunk-body caching. Downloads can still cache fetched chunks.
-
 ## Telegram Recovery Records
 
-`TELEGRAM_ORGANIZATION_MODE` defaults to `caption` in this repo's
-`wrangler.toml`.
+`TELEGRAM_ORGANIZATION_MODE` controls whether uploads write organization hints
+into Telegram:
 
+- `off`: organization stays only in Cloudflare KV.
 - `caption`: object chunks get short, marker-prefixed captions.
 - `manifest`: Filecubby sends one marker-prefixed recovery manifest message
   after the object chunks have been uploaded.
-- `off`: organization stays only in Cloudflare KV.
 
 `FILECUBBY_MARKER` defaults to `fc`. Captions and manifests include
 `namespace: default` when needed for repair/import.
@@ -232,9 +239,19 @@ Repair/import uses `getUpdates` through `POST /api/repair/import-telegram`.
 That can reconstruct KV records only from messages the Bot API can currently
 see; it does not read arbitrary old chat history.
 
+## Caching
+
+The active performance path has two layers:
+
+- Telegram chunk URL caching in `FILE_DOWNLOAD_INFO`.
+- Optional chunk-body caching through the Cloudflare Cache API.
+
+`CACHE_CHUNK_EDGE_ON_UPLOAD` defaults to false, so upload completion does not
+block on edge chunk-body caching. Downloads can still cache fetched chunks.
+
 ## CLI
 
-The Go CLI is in `cli/` and installs only as `filecubby` with `just install`.
+The Go CLI is in `cli/` and installs as `filecubby` with `just install`.
 
 Config resolution:
 

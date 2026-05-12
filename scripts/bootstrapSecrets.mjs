@@ -89,7 +89,7 @@ async function main() {
   }
 
   if (!values.get('FILECUBBY_URL')) {
-    values.set('FILECUBBY_URL', 'https://filecubby.<your-cloudflare-domain>');
+    values.set('FILECUBBY_URL', 'http://localhost:8787');
     changed = true;
   }
 
