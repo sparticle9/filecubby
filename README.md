@@ -86,6 +86,27 @@ back to its own environment bindings at runtime, so auto-discovered chat IDs are
 cached in KV; values entered in Cloudflare's setup form are saved as Worker
 secrets/env bindings.
 
+## Fork And Deploy
+
+This is the second recommended path for users who can spend a few more minutes
+in GitHub. It keeps a clearer update story than a one-time clone: fork this
+repo, configure GitHub Environment secrets in the fork, then run the manual
+**Deploy Filecubby** Action.
+
+Minimum setup in your fork:
+
+- Environment variable: `CLOUDFLARE_ACCOUNT_ID`
+- Required secrets: `CLOUDFLARE_API_TOKEN`, `BOT_TOKEN`
+- Optional secrets: `CHAT_ID`, `ADMIN_TOKEN`, `FILECUBBY_TOKEN`
+
+Run **Actions -> Deploy Filecubby -> Run workflow**. `CHAT_ID` follows the same
+rules as the button path: set it to save it as a Worker secret, or leave it
+blank for private-DM discovery after sending `/start` to the bot.
+
+To update later, sync your fork from `sparticle9/filecubby`, review the changes,
+and run the workflow again. Custom domains can be passed through the workflow's
+`custom_domain` input.
+
 ## Quick Start
 
 ```sh

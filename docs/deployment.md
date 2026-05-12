@@ -74,11 +74,12 @@ or with `wrangler secret put CHAT_ID`, it is a Worker secret/env binding. If
 auto-discovered at runtime, it is cached in KV because Workers cannot mutate
 their own environment bindings.
 
-## GitHub Action Fallback
+## Fork And Deploy
 
-The manual `Deploy Filecubby` workflow provisions Cloudflare and deploys from
-one guided Actions run. Treat it as an advanced/operator fallback, not the
-primary public install path.
+This is the second recommended path for users who can tolerate a few GitHub
+steps and want a better update story than a one-time clone. Fork
+`sparticle9/filecubby`, configure a GitHub Environment in the fork, and run the
+manual **Deploy Filecubby** workflow.
 
 Minimum environment variable:
 
@@ -94,6 +95,22 @@ Optional environment secrets:
 - `CHAT_ID`
 - `ADMIN_TOKEN`
 - `FILECUBBY_TOKEN`
+
+Workflow inputs worth setting:
+
+- `github_environment`: the environment that stores the values above.
+- `worker_name`: Worker name, usually `filecubby`.
+- `namespace_prefix`: KV namespace prefix. Leave blank to use `worker_name`.
+- `custom_domain`: optional hostname if the user already has a Cloudflare zone.
+- `dry_run`: set true for a non-mutating validation pass.
+
+`CHAT_ID` follows the same model as the deploy-button path: set it to save it
+as a Worker secret/env binding, or leave it blank for private-DM discovery after
+sending `/start` to the bot.
+
+To update later, sync the fork from `sparticle9/filecubby`, review the incoming
+changes, and run the workflow again. This is still more work than the deploy
+button, but it gives the owner a durable Git repo they control.
 
 Custom domains are intentionally not part of the primary deploy-button flow
 yet. Attach one after the first deploy from Cloudflare, or use the operator path
