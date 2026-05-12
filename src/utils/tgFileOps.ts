@@ -4,6 +4,7 @@ import { cacheChunk, getCachedChunk } from './cache'
 import { filecubbyMarker, telegramOrganizationMode } from './metadata'
 
 const TG_USER_AGENT = (env: Env) => env.TG_USER_AGENT || 'Filecubby-Server/1.0';
+const CHAT_ID_CACHE_KEY = 'telegram:chat-id';
 
 /**
  * Uploads a file or chunk to Telegram.
@@ -23,6 +24,7 @@ export interface TelegramDocumentUploadResult {
 
 export async function sendTelegramManifest(env: Env, metadata: ObjectMetadata): Promise<number | undefined> {
   if (telegramOrganizationMode(env) !== 'manifest') return undefined;
+  const chatId = await resolveTelegramChatId(env);
 
   const text = [
     telegramRecoveryOneLiner(env, metadata),
@@ -42,7 +44,7 @@ export async function sendTelegramManifest(env: Env, metadata: ObjectMetadata): 
       'User-Agent': TG_USER_AGENT(env),
     },
     body: JSON.stringify({
-      chat_id: env.CHAT_ID,
+      chat_id: chatId,
       text,
       disable_web_page_preview: true,
     }),
@@ -56,6 +58,44 @@ export async function sendTelegramManifest(env: Env, metadata: ObjectMetadata): 
 
 export function shouldSendTelegramManifest(env: Env): boolean {
   return telegramOrganizationMode(env) === 'manifest';
+}
+
+export async function resolveTelegramChatId(env: Env): Promise<string> {
+  if (env.CHAT_ID) return env.CHAT_ID;
+
+  const cached = await env.TASKS.get(CHAT_ID_CACHE_KEY);
+  if (cached) return cached;
+
+  const response = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getUpdates`, {
+    headers: { 'User-Agent': TG_USER_AGENT(env) },
+  });
+  const payload: any = await response.json();
+  if (!payload.ok) {
+    throw new Error(`CHAT_ID is not configured and Telegram getUpdates failed: ${payload.description || response.statusText}`);
+  }
+
+  const chats = new Map<string, string>();
+  for (const update of payload.result ?? []) {
+    const chat =
+      update.message?.chat ??
+      update.channel_post?.chat ??
+      update.edited_message?.chat ??
+      update.edited_channel_post?.chat;
+    if (chat?.id) chats.set(String(chat.id), chat.title || chat.username || chat.first_name || 'unnamed chat');
+  }
+
+  if (chats.size === 1) {
+    const [chatId] = chats.keys();
+    await env.TASKS.put(CHAT_ID_CACHE_KEY, chatId);
+    return chatId;
+  }
+
+  if (chats.size > 1) {
+    const options = [...chats.entries()].map(([id, label]) => `${id} (${label})`).join(', ');
+    throw new Error(`CHAT_ID is not configured and Telegram shows multiple chats: ${options}. Set CHAT_ID explicitly.`);
+  }
+
+  throw new Error('CHAT_ID is not configured. Send one message, such as /start, to the Telegram bot, then retry, or set CHAT_ID explicitly.');
 }
 
 export async function uploadToTelegramDocument(

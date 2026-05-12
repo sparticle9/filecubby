@@ -162,7 +162,7 @@ export interface Env {
   FILE_DOWNLOAD_INFO: KVNamespace;
   TASKS: KVNamespace;
   BOT_TOKEN: string;
-  CHAT_ID: string;
+  CHAT_ID?: string;
   MAX_CHUNK_SIZE: string | number;
   MAX_IMAGE_SIZE: string | number;
   CACHE_CHUNK_URL_MAX_RETRY: string | number;

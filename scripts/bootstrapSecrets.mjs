@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 const envPath = new URL('../.env', import.meta.url);
-const examplePath = new URL('../.env.example', import.meta.url);
+const examplePath = new URL('../.env.local.example', import.meta.url);
 
 function parseEnv(text) {
   const values = new Map();
@@ -108,7 +108,7 @@ async function main() {
     console.log('.env already contains the bootstrap values this script can create.');
   }
 
-  const missing = ['BOT_TOKEN', 'CHAT_ID', 'ADMIN_TOKEN'].filter((key) => !values.get(key));
+  const missing = ['BOT_TOKEN', 'ADMIN_TOKEN'].filter((key) => !values.get(key));
   if (missing.length > 0) {
     console.log(`Still missing: ${missing.join(', ')}`);
   }

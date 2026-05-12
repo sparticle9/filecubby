@@ -1,6 +1,6 @@
 import { Env } from './index'
 import { deleteObjectMetadata, getExpiredObjects, ObjectMetadata } from './db'
-import { deleteMessageFromTelegram } from './utils/tgFileOps'
+import { deleteMessageFromTelegram, resolveTelegramChatId } from './utils/tgFileOps'
 
 export async function handleExpiryTask(env: Env): Promise<void> {
   const expiredObjects = await getExpiredObjects(env.FILES)
@@ -16,11 +16,12 @@ export async function handleExpiryTask(env: Env): Promise<void> {
 }
 
 async function deleteObject(env: Env, objectId: string, object: ObjectMetadata): Promise<void> {
+  const chatId = await resolveTelegramChatId(env)
   if (object.chunks <= 1) {
-    await deleteMessageFromTelegram(env.BOT_TOKEN, env.CHAT_ID, object.chunkIds[0])
+    await deleteMessageFromTelegram(env.BOT_TOKEN, chatId, object.chunkIds[0])
   } else {
     for (const chunkId of object.chunkIds) {
-      await deleteMessageFromTelegram(env.BOT_TOKEN, env.CHAT_ID, chunkId)
+      await deleteMessageFromTelegram(env.BOT_TOKEN, chatId, chunkId)
     }
   }
 

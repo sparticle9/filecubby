@@ -1,9 +1,11 @@
 import { Context } from 'hono'
 import { Env } from '../index'
 import { DEFAULT_NAMESPACE_ID } from '../db'
+import { resolveTelegramChatId } from '../utils/tgFileOps'
 
 export async function deleteExpiredObjects(env: Env) {
-  const { BOT_TOKEN, CHAT_ID, FILES, TASKS } = env
+  const { BOT_TOKEN, FILES, TASKS } = env
+  const CHAT_ID = await resolveTelegramChatId(env)
   const now = Date.now()
 
   const { keys } = await FILES.list({ prefix: `object:${DEFAULT_NAMESPACE_ID}:` })

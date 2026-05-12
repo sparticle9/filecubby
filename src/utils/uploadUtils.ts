@@ -3,7 +3,7 @@ import { Env } from '../index'
 import { DEFAULT_NAMESPACE_ID, ObjectMetadata, User } from '../db'
 import { getObjectMetadata, saveObjectMetadata, updateObjectMetadata, validateObjectMetadata } from '../db'
 import { generateObjectId } from '../utils'
-import { buildChunkCaption, preCacheSingleChunkUrl, sendTelegramManifest, shouldSendTelegramManifest, uploadToTelegramDocument } from './tgFileOps'
+import { buildChunkCaption, preCacheSingleChunkUrl, resolveTelegramChatId, sendTelegramManifest, shouldSendTelegramManifest, uploadToTelegramDocument } from './tgFileOps'
 import { cacheChunk, getCachedChunk } from './cache'
 import { applyMetadataInputs, effectiveMaxChunkSize, TELEGRAM_BACKEND } from './metadata'
 
@@ -103,6 +103,7 @@ export async function handleChunkUpload(
 
     console.log(`Handling upload for user ${user.id}, object type: ${objectType}`);
     console.log(`Processing chunk ${chunkIndex + 1} of ${totalChunks} for object ${objectId} (${objectName})`);
+    const telegramChatId = await resolveTelegramChatId(c.env);
 
     let metadata: ObjectMetadata;
 
@@ -133,7 +134,7 @@ export async function handleChunkUpload(
         metadata.expiresAt = expiresAt.toISOString();
       }
 
-      const uploaded = await uploadToTelegramDocument(c.env, c.env.BOT_TOKEN, c.env.CHAT_ID, objectBlob, objectName, objectType, {
+      const uploaded = await uploadToTelegramDocument(c.env, c.env.BOT_TOKEN, telegramChatId, objectBlob, objectName, objectType, {
         caption: buildChunkCaption(c.env, metadata, chunkIndex),
       });
       metadata.chunkIds[chunkIndex] = uploaded.chunkId;
@@ -149,7 +150,7 @@ export async function handleChunkUpload(
       if (!existing) {
         throw new Error('Metadata not found');
       }
-      const uploaded = await uploadToTelegramDocument(c.env, c.env.BOT_TOKEN, c.env.CHAT_ID, objectBlob, objectName, objectType, {
+      const uploaded = await uploadToTelegramDocument(c.env, c.env.BOT_TOKEN, telegramChatId, objectBlob, objectName, objectType, {
         caption: buildChunkCaption(c.env, existing, chunkIndex),
       });
       metadata = await updateObjectMetadata(c.env.FILES, objectId, (existingMetadata) => {

@@ -20,6 +20,9 @@ storage chat, and service tokens.
 - Use `/openapi.json` and CLI `--json` output for scripts and agents.
 - Optionally write parseable Telegram captions or manifest messages for manual
   recovery and Telegram UI search.
+- Deploy from the Cloudflare button with account-local secrets and
+  automatically provisioned KV, or use `pnpm run setup` / the manual GitHub
+  Action for operator workflows.
 
 ## Limits
 
@@ -40,12 +43,50 @@ the bytes for HTTP download or media streaming.
 - Node 22, pnpm, project-local Wrangler
 - Go CLI installed by `just install`
 
+## Deploy To Cloudflare
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sparticle9/filecubby)
+
+This is the primary install path for this public repository. It does not
+require Cloudflare or Telegram secrets in the GitHub repo. Cloudflare clones the
+project into your GitHub or GitLab account, provisions Worker resources in your
+Cloudflare account, and prompts for Worker secrets from `.env.example`.
+
+Before clicking:
+
+1. Open Telegram and message `@BotFather`.
+2. Create a bot with `/newbot` and copy the bot token.
+3. Open the new bot and send it one message, such as `/start`. Do this before
+   the first upload so Telegram exposes the chat to the bot.
+4. Generate a private admin token, for example `openssl rand -hex 32`.
+
+In Cloudflare's setup form:
+
+- Set `BOT_TOKEN` to the token from `@BotFather`.
+- Set `ADMIN_TOKEN` to your generated admin token.
+- Set `CHAT_ID` if you know it; Cloudflare saves it as a Worker secret/env
+  binding. For a private bot DM, you may leave it blank after sending `/start`.
+  Filecubby discovers the chat on first upload and caches it in KV. Set
+  `CHAT_ID` explicitly for groups, channels, or bots that can see more than one
+  chat.
+- Use the default `*.workers.dev` URL unless you want to add a custom domain
+  after the first deploy.
+
+After deploy, use `Authorization: Bearer <ADMIN_TOKEN>` for API or CLI calls.
+Custom domains are optional and can be attached later in Cloudflare.
+
+If the first upload says `CHAT_ID` is not configured, send `/start` to the bot
+in Telegram and retry the upload. No redeploy is required. A Worker cannot write
+back to its own environment bindings at runtime, so auto-discovered chat IDs are
+cached in KV; values entered in Cloudflare's setup form are saved as Worker
+secrets/env bindings.
+
 ## Quick Start
 
 ```sh
 fnm use
 pnpm install
-cp .env.example .env
+cp .env.local.example .env
 pnpm run setup:check
 pnpm run typecheck
 pnpm run build
@@ -53,6 +94,11 @@ pnpm run build
 
 Fill `.env` with your own Cloudflare and Telegram credentials. Keep `.env` and
 CLI config private.
+
+For a fresh public deploy-button install, keep the checked-in `wrangler.toml`
+account-neutral. It intentionally does not contain an `account_id`, custom
+route, or KV namespace IDs. Cloudflare's deploy-button flow provisions the KV
+namespaces from the binding names.
 
 For a custom domain, use a hostname on your own Cloudflare-managed zone, for
 example:
@@ -165,6 +211,8 @@ Use `?dl=1` to force attachment disposition for otherwise inline-safe types.
 
 ## Docs
 
+- [docs/deployment.md](docs/deployment.md): deploy-button and operator
+  deployment notes.
 - [docs/architecture.md](docs/architecture.md): system model, API surface, data
   flow, and implementation architecture.
 - [docs/observation.md](docs/observation.md): observability model and safe

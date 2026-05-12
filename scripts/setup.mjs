@@ -7,9 +7,9 @@ import { stdin as input, stdout as output } from 'node:process';
 const checkOnly = process.argv.includes('--check');
 const yes = process.argv.includes('--yes');
 const envPath = new URL('../.env', import.meta.url);
-const envExamplePath = new URL('../.env.example', import.meta.url);
+const envExamplePath = new URL('../.env.local.example', import.meta.url);
 const wranglerPath = new URL('../wrangler.toml', import.meta.url);
-const requiredEnv = ['CLOUDFLARE_API_TOKEN', 'BOT_TOKEN', 'ADMIN_TOKEN', 'CHAT_ID', 'FILECUBBY_URL'];
+const requiredEnv = ['CLOUDFLARE_API_TOKEN', 'BOT_TOKEN', 'ADMIN_TOKEN', 'FILECUBBY_URL'];
 const kvBindings = ['TASKS', 'USERS', 'FILES', 'FILE_DOWNLOAD_INFO'];
 const kvNames = new Map([
   ['TASKS', 'filecubby-tasks'],
@@ -249,6 +249,10 @@ async function askYes(question) {
 }
 
 async function putSecret(name, env) {
+  if (!env.get(name)) {
+    console.log(`Skipping Worker secret ${name}: not configured.`);
+    return;
+  }
   const result = spawnSync('pnpm', ['exec', 'wrangler', 'secret', 'put', name], {
     cwd: new URL('..', import.meta.url),
     env: { ...process.env, ...Object.fromEntries(env) },
