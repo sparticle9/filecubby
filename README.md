@@ -25,7 +25,7 @@ Production URL for this repo's current deployment: `https://filecubby.<your-clou
 - Optionally write parseable Telegram captions or manifest messages for manual
   recovery and Telegram UI search.
 - Bootstrap Cloudflare, Telegram, secrets, KV, deploys, and smoke checks with
-  `pnpm run setup`.
+  `pnpm run setup` or the manual `Deploy Filecubby` GitHub Action.
 
 ## Important Limits
 
@@ -94,6 +94,154 @@ upload/download smoke checks.
 
 GitHub Actions deployment is available through the manual
 `Deploy Filecubby` workflow after repository secrets are configured.
+
+## Deployment
+
+Filecubby is designed to be deployable by an owner who already has a
+Cloudflare account and a Telegram bot. A custom domain is optional: without
+one, Wrangler can publish the Worker on the account's `*.workers.dev`
+subdomain.
+
+Prerequisites:
+
+- Cloudflare account ID.
+- Cloudflare API token for Wrangler.
+- Telegram bot token from `@BotFather`.
+- Telegram chat or channel where the bot can upload documents.
+- Node 22 from `fnm` or `mise`, pnpm, and this repo's project-local Wrangler
+  dependency.
+
+Create the Cloudflare API token from the Cloudflare dashboard:
+
+1. Open **Manage Account > Account API Tokens**. These account-owned tokens are
+   durable service-principal credentials, use the `cfat_` prefix for new tokens,
+   and are the preferred fit for CI/CD or long-lived OSS deployments. Creating
+   them requires Super Administrator permission on the Cloudflare account.
+2. Select **Create Token**, choose a custom token, and name it for this
+   deployment, for example `filecubby-wrangler-deploy`.
+3. Add the account permissions needed by Wrangler and this repo's setup script:
+   `Account Settings:Read`, `Workers Scripts:Read`,
+   `Workers Scripts:Edit`, `Workers KV Storage:Read`, and
+   `Workers KV Storage:Edit`.
+4. Optional but useful for operational inspection: add
+   `Workers Observability:Write` for Workers telemetry queries. If the dashboard
+   presents separate read/write observability choices, include the read choice
+   as well. Cloudflare's telemetry key, value, and query API endpoints currently
+   require `Workers Observability Write`.
+5. If you will attach a custom domain or zone route, add
+   `Workers Routes:Edit` scoped only to that zone. Do not grant all zones unless
+   you intentionally deploy across all zones.
+6. Scope the account resource to the one Cloudflare account that will run
+   Filecubby. Optionally add Cloudflare token restrictions such as TTL or client
+   IP filtering.
+7. Copy the token secret once and store it only in ignored local state or CI
+   secrets.
+
+Cloudflare's current token flow recommends scoping tokens down to the specific
+account and zone resources they need. Their account-owned token docs describe
+these as the durable integration path when the target endpoints are compatible;
+Workers and Workers KV are compatible. Filecubby does not need R2 for the
+default Telegram-backed deployment.
+
+Local deployment:
+
+```sh
+# preferred
+fnm use
+
+# also supported
+mise install
+
+pnpm install
+cp .env.example .env
+```
+
+The repo keeps `.node-version` for `fnm` and `.tool-versions` for `mise`.
+Mise can also read `.node-version`, but that requires enabling mise's
+idiomatic Node version file support globally; the checked-in `.tool-versions` avoids
+that extra prerequisite for new contributors.
+
+Fill `.env` with:
+
+```text
+CLOUDFLARE_API_TOKEN=<token from Cloudflare>
+BOT_TOKEN=<telegram bot token>
+CHAT_ID=<telegram chat id>
+ADMIN_TOKEN=<random private admin token>
+FILECUBBY_URL=https://<worker-name>.<account-subdomain>.workers.dev
+FILECUBBY_TOKEN=<optional service token for smoke checks>
+```
+
+For a fresh OSS deployment, update `wrangler.toml` before deploying:
+
+- Set `account_id` to your Cloudflare account ID.
+- Keep `workers_dev = true` if you do not use a custom domain.
+- Remove or replace the `routes` entry unless you own the listed custom domain.
+- Keep the KV binding names unless you are also changing the code.
+
+Then run:
+
+```sh
+pnpm run setup:check
+pnpm run setup
+```
+
+`pnpm run setup` creates or verifies the KV namespaces, uploads Worker secrets,
+runs typecheck and a Wrangler dry-run deploy, asks before the live deploy, seeds
+the admin token into remote KV, and performs a real upload/download smoke check.
+
+For non-interactive deploys after the first setup:
+
+```sh
+pnpm run typecheck
+pnpm run build
+pnpm run deploy
+```
+
+For non-developer operators, prefer the manual **Deploy Filecubby** GitHub
+Action. Configure a GitHub Environment such as `production` or `staging` with
+the minimum required values:
+
+```text
+CLOUDFLARE_ACCOUNT_ID # environment variable
+CLOUDFLARE_API_TOKEN  # environment secret
+BOT_TOKEN             # environment secret
+```
+
+Manual GitHub setup:
+
+1. Open the repository on GitHub.
+2. Go to **Settings -> Environments**.
+3. Create an environment such as `production` or `staging`.
+4. Add variable `CLOUDFLARE_ACCOUNT_ID`.
+5. Add secrets `CLOUDFLARE_API_TOKEN` and `BOT_TOKEN`.
+6. Optionally add `CHAT_ID`, `ADMIN_TOKEN`, and `FILECUBBY_TOKEN`.
+7. Go to **Actions -> Deploy Filecubby -> Run workflow** and select that
+   environment.
+
+`CHAT_ID`, `ADMIN_TOKEN`, and `FILECUBBY_TOKEN` are optional. If `CHAT_ID` is
+missing, the workflow tries to discover it from Telegram `getUpdates`; add the
+bot to the storage chat and send one message before running. If `ADMIN_TOKEN` is
+missing and the resolved chat is a private bot DM, the workflow generates one
+and delivers it there. It does not print generated credentials in GitHub logs or
+job summaries.
+
+`gh` CLI can set the same values, but it is optional:
+
+```sh
+gh variable set CLOUDFLARE_ACCOUNT_ID --env staging --body "$CLOUDFLARE_ACCOUNT_ID"
+gh secret set CLOUDFLARE_API_TOKEN --env staging --body "$CLOUDFLARE_API_TOKEN"
+gh secret set BOT_TOKEN --env staging --body "$BOT_TOKEN"
+```
+
+For a local staging rehearsal, use an ignored `.env.staging` copied from
+`.env.staging.example`, then run:
+
+```sh
+pnpm run provision:staging:dry-run
+```
+
+More operational detail is in [docs/architecture.md](docs/architecture.md).
 
 ## CLI
 

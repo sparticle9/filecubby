@@ -15,7 +15,7 @@ before:
 
 builds:
   - main: ./
-    binary: tgpan
+    binary: filecubby
     env:
       - CGO_ENABLED=0
     goos:

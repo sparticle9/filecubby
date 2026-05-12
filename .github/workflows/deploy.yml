@@ -2,23 +2,63 @@ name: Deploy Filecubby
 
 on:
   workflow_dispatch:
+    inputs:
+      github_environment:
+        description: "GitHub Environment holding Cloudflare and Telegram secrets"
+        required: true
+        default: "production"
+      worker_name:
+        description: "Worker name"
+        required: true
+        default: "filecubby"
+      namespace_prefix:
+        description: "KV namespace prefix; leave blank to use worker_name"
+        required: false
+        default: ""
+      public_url:
+        description: "Optional public URL for smoke checks"
+        required: false
+        default: ""
+      custom_domain:
+        description: "Optional custom domain"
+        required: false
+        default: ""
+      filecubby_marker:
+        description: "Telegram caption/manifest marker"
+        required: false
+        default: "fc"
+      telegram_organization_mode:
+        description: "Telegram organization record mode"
+        required: true
+        type: choice
+        options:
+          - caption
+          - off
+          - manifest
+        default: caption
+      dry_run:
+        description: "Generate config and run Wrangler dry-run without mutating Cloudflare"
+        required: true
+        type: boolean
+        default: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.github_environment }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6.0.7
         with:
           version: 10.33.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6.4.0
         with:
           node-version-file: .node-version
           cache: pnpm
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: cli/go.mod
 
@@ -28,25 +68,19 @@ jobs:
 
       - run: pnpm run typecheck
 
-      - run: pnpm run build
+      - name: Provision and deploy
+        run: node scripts/provisionCloudflare.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-
-      - run: printf '%s' "$BOT_TOKEN" | pnpm exec wrangler secret put BOT_TOKEN
-        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-
-      - run: printf '%s' "$CHAT_ID" | pnpm exec wrangler secret put CHAT_ID
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-
-      - run: printf '%s' "$ADMIN_TOKEN" | pnpm exec wrangler secret put ADMIN_TOKEN
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
-
-      - run: pnpm run deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          FILECUBBY_TOKEN: ${{ secrets.FILECUBBY_TOKEN }}
+          FILECUBBY_WORKER_NAME: ${{ inputs.worker_name }}
+          FILECUBBY_NAMESPACE_PREFIX: ${{ inputs.namespace_prefix || inputs.worker_name }}
+          FILECUBBY_URL: ${{ inputs.public_url }}
+          FILECUBBY_CUSTOM_DOMAIN: ${{ inputs.custom_domain }}
+          FILECUBBY_MARKER: ${{ inputs.filecubby_marker }}
+          TELEGRAM_ORGANIZATION_MODE: ${{ inputs.telegram_organization_mode }}
+          WRANGLER_CONFIG_OUT: wrangler.provision.generated.toml

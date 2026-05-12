@@ -30,7 +30,15 @@ function parseEnv(text) {
 }
 
 function formatEnv(values) {
-  const keys = ['CLOUDFLARE_API_TOKEN', 'BOT_TOKEN', 'ADMIN_TOKEN', 'CHAT_ID', 'FILECUBBY_URL', 'FILECUBBY_TOKEN'];
+  const keys = [
+    'CLOUDFLARE_ACCOUNT_ID',
+    'CLOUDFLARE_API_TOKEN',
+    'BOT_TOKEN',
+    'ADMIN_TOKEN',
+    'CHAT_ID',
+    'FILECUBBY_URL',
+    'FILECUBBY_TOKEN',
+  ];
   return `${keys.map((key) => `${key}=${values.get(key) ?? ''}`).join('\n')}\n`;
 }
 

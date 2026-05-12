@@ -17,6 +17,7 @@ function parseEnv(text) {
 
 function formatEnv(values) {
   const keys = [
+    'CLOUDFLARE_ACCOUNT_ID',
     'CLOUDFLARE_API_TOKEN',
     'BOT_TOKEN',
     'ADMIN_TOKEN',

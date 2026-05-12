@@ -46,3 +46,46 @@ dataset = "filecubby_analytics"
 
 [placement]
 mode = "smart"
+
+[env.staging]
+name = "filecubby-staging"
+account_id = ""
+workers_dev = true
+
+[[env.staging.kv_namespaces]]
+binding = "TASKS"
+id = "00000000000000000000000000000000"
+
+[[env.staging.kv_namespaces]]
+binding = "USERS"
+id = "00000000000000000000000000000000"
+
+[[env.staging.kv_namespaces]]
+binding = "FILES"
+id = "00000000000000000000000000000000"
+
+[[env.staging.kv_namespaces]]
+binding = "FILE_DOWNLOAD_INFO"
+id = "00000000000000000000000000000000"
+
+[env.staging.vars]
+TG_USER_AGENT = "Mozilla/5.0 (Linux; Android 13; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36"
+MAX_CHUNK_SIZE = 19922944
+MAX_IMAGE_SIZE = 10457280
+CACHE_CHUNK_URL_MAX_RETRY = 5
+CACHE_CHUNK_URL_TIMEOUT = 5000
+CACHE_CHUNK_EDGE_ON_UPLOAD = 'false'
+EDGE_CACHE_CHUNK_TTL = 24
+EDGE_CACHE_MAX_CHUNK_SIZE = 50
+TELEGRAM_ORGANIZATION_MODE = "caption"
+FILECUBBY_MARKER = "fcstg"
+
+[env.staging.triggers]
+crons = ["0 0 * * *"]
+
+[[env.staging.analytics_engine_datasets]]
+binding = "ANALYTICS_ENGINE"
+dataset = "filecubby_staging_analytics"
+
+[env.staging.placement]
+mode = "smart"
