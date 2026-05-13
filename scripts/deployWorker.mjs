@@ -68,15 +68,22 @@ function namespaceIds() {
 }
 
 function injectKvIds(configText, ids) {
-  let output = configText;
-  for (const [binding] of kvBindings) {
+  const kvBlocks = kvBindings.map(([binding]) => {
     const id = ids.get(binding);
     if (!id) throw new Error(`Missing KV namespace id for ${binding}`);
-    const blockPattern = new RegExp(`(\\[\\[kv_namespaces\\]\\]\\s*\\nbinding\\s*=\\s*"${binding}"\\s*\\n)(?:id\\s*=\\s*"[^"]*"\\s*\\n)?`, 'm');
-    if (!blockPattern.test(output)) throw new Error(`Could not find kv_namespaces binding ${binding} in wrangler.toml`);
-    output = output.replace(blockPattern, `$1id = "${id}"\n`);
-  }
-  return output;
+    return `[[kv_namespaces]]\nbinding = "${binding}"\nid = "${id}"\n`;
+  }).join('\n');
+
+  const withoutTemplateKv = configText
+    .replace(/# KV namespaces[\s\S]*?before setup\.\n\n/, '')
+    .replace(/\[\[kv_namespaces\]\][\s\S]*?(?=\n\[[^\[]|$)/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd();
+
+  const varsIndex = withoutTemplateKv.indexOf('\n[vars]');
+  if (varsIndex === -1) return `${withoutTemplateKv}\n\n${kvBlocks}\n`;
+
+  return `${withoutTemplateKv.slice(0, varsIndex)}\n\n${kvBlocks}${withoutTemplateKv.slice(varsIndex)}\n`;
 }
 
 function main() {

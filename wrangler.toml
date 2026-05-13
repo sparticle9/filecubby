@@ -3,17 +3,9 @@ main = "src/index.ts"
 compatibility_date = "2026-05-11"
 workers_dev = true
 
-[[kv_namespaces]]
-binding = "TASKS"
-
-[[kv_namespaces]]
-binding = "USERS"
-
-[[kv_namespaces]]
-binding = "FILES"
-
-[[kv_namespaces]]
-binding = "FILE_DOWNLOAD_INFO"
+# KV namespaces are created and injected by scripts/deployWorker.mjs for
+# deploy-button installs. Keeping them out of the template prevents Cloudflare's
+# setup UI from showing confusing account-specific KV prompts before setup.
 
 [vars]
 TG_USER_AGENT = "Mozilla/5.0 (Linux; Android 13; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36"
