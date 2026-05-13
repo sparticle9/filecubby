@@ -2,11 +2,16 @@
 
 ## Primary OSS Deploy
 
-Use the README's **Deploy to Cloudflare** button for public installs. This path
-keeps Cloudflare account IDs, Cloudflare API tokens, and Telegram bot secrets
-out of this source repository. Cloudflare still asks the user to connect a
-GitHub or GitLab account so it can create a copy of the project and connect
-that copy to Workers Builds.
+Use the README's **Deploy to Cloudflare** button for the easiest first install,
+especially on a clean Cloudflare account. This path keeps Cloudflare account
+IDs, Cloudflare API tokens, and Telegram bot secrets out of this source
+repository. Cloudflare still asks the user to connect a GitHub or GitLab
+account so it can create a copy of the project and connect that copy to Workers
+Builds.
+
+This button path is intentionally a first-install path, not an update system.
+Cloudflare creates a one-time copy and does not keep it automatically synced to
+upstream. Users who want repeatable updates should use **Fork And Deploy**.
 
 Minimum user steps:
 
@@ -15,22 +20,22 @@ Minimum user steps:
 3. Click the deploy button.
 4. In Cloudflare's setup UI, set `BOT_TOKEN` and `ADMIN_TOKEN`.
 5. Set `CHAT_ID` in the non-secret options if known. For a private bot DM, it
-   can be left blank after sending `/start`;
-   Filecubby discovers it on first upload and caches it in KV. Set it
-   explicitly for groups, channels, or bots visible in more than one chat.
-6. For each KV namespace prompt, choose **Create new**. If Cloudflare pre-fills
-   every namespace name as `filecubby`, rename them to distinct names:
-   `filecubby-tasks`, `filecubby-users`, `filecubby-files`, and
-   `filecubby-download-info`.
+   can be left blank after sending `/start`; Filecubby discovers it on first
+   upload and caches it in KV. Set it explicitly for groups, channels, or bots
+   visible in more than one chat.
 
 Cloudflare prompts for Worker secrets from `.env.example`. The deploy command
 resolves existing KV namespaces first, creates missing ones, writes an ignored
-generated Wrangler config with IDs, and deploys that generated config. Custom
-domains are optional and should be attached after the first deploy if the user
-hosts a suitable zone in their Cloudflare account.
+generated Wrangler config with IDs, and deploys that generated config. Users
+should not need to choose KV namespaces in Cloudflare's setup UI; the generated
+config binds `filecubby-tasks`, `filecubby-users`, `filecubby-files`, and
+`filecubby-download-info` automatically. If Cloudflare's UI still shows stale KV
+prompts, leave them unchanged and let the deploy script finish.
 
 The checked-in `wrangler.toml` is intentionally template-safe: no `account_id`,
-no production route, and no account-specific KV namespace IDs.
+no production route, and no account-specific KV namespace IDs. It also omits KV
+bindings from the template so the deploy-button form does not ask non-dev users
+to pick namespace IDs before setup.
 
 If a user forgets to message the bot before uploading, the deploy still
 succeeds. The first upload fails with an instruction to send a message to the
@@ -64,8 +69,9 @@ FILECUBBY_TOKEN=
 ```
 
 Local setup uploads `CHAT_ID` as a Worker secret only when it is configured or
-discoverable through the local helper. In the deploy-button path, `CHAT_ID` is
-a non-secret Worker environment variable from `wrangler.toml`.
+discoverable through the local helper. In the deploy-button and GitHub Action
+paths, `CHAT_ID` is a non-secret Worker environment variable from the generated
+Wrangler config.
 
 Telegram `BOT_TOKEN` must come from `@BotFather`. `CHAT_ID` is optional for a
 private bot DM when exactly one chat is visible to Telegram `getUpdates`; send
@@ -79,43 +85,40 @@ bindings.
 
 This is the second recommended path for users who can tolerate a few GitHub
 steps and want a better update story than a one-time clone. Fork
-`sparticle9/filecubby`, configure a GitHub Environment in the fork, and run the
+`sparticle9/filecubby`, add two GitHub Actions secrets in the fork, and run the
 manual **Deploy Filecubby** workflow.
 
-Minimum environment variable:
+Minimum setup:
 
-- `CLOUDFLARE_ACCOUNT_ID`, or fill the `cloudflare_account_id` workflow input
+- `CLOUDFLARE_API_TOKEN` and `BOT_TOKEN` must exist as GitHub Actions secrets
+  before the workflow can deploy. GitHub does not securely prompt for secrets in
+  the **Run workflow** form.
+- `CLOUDFLARE_ACCOUNT_ID` is required, but it can be typed into the workflow
+  form instead of pre-created as a GitHub Actions variable.
+- `ADMIN_TOKEN`, `FILECUBBY_TOKEN`, and `CHAT_ID` are optional. `CHAT_ID` is a
+  non-secret value and is deployed as a plain Worker variable. If `ADMIN_TOKEN`
+  is omitted, the workflow generates one and sends it to the private Telegram
+  bot chat; store it as an Actions secret later if future runs should reuse the
+  same admin token.
 
-Minimum environment secrets:
-
-- `CLOUDFLARE_API_TOKEN`
-- `BOT_TOKEN`
-
-Optional environment secrets:
-
-- `ADMIN_TOKEN`
-- `FILECUBBY_TOKEN`
-
-GitHub does not securely prompt for secrets in the **Run workflow** form.
-Create the `production` Environment in the fork before running the workflow,
-then add `CLOUDFLARE_API_TOKEN` and `BOT_TOKEN` under Environment secrets. The
-workflow form can accept non-secret values like Cloudflare account ID and
-Telegram chat ID.
+Before running the workflow, add `CLOUDFLARE_API_TOKEN` and `BOT_TOKEN` under
+`Settings -> Secrets and variables -> Actions -> Secrets`. The workflow form can
+accept non-secret values like Cloudflare account ID and Telegram chat ID.
 
 Workflow inputs worth setting:
 
-- `github_environment`: the environment that stores the values above.
-- `cloudflare_account_id`: Cloudflare account ID, if not stored as an
-  environment variable.
+- `cloudflare_account_id`: Cloudflare account ID, if not stored as a GitHub
+  Actions variable.
 - `chat_id`: optional non-secret Telegram chat ID, if known.
 - `worker_name`: Worker name, usually `filecubby`.
 - `namespace_prefix`: KV namespace prefix. Leave blank to use `worker_name`.
 - `custom_domain`: optional hostname if the user already has a Cloudflare zone.
 - `dry_run`: set true for a non-mutating validation pass.
 
-`CHAT_ID` can be set as a workflow input or environment variable for this
-workflow, or left blank for private-DM discovery after sending `/start` to the
-bot.
+`CHAT_ID` can be set as the `chat_id` workflow input or as a GitHub Actions
+variable named `CHAT_ID`, or left blank for private-DM discovery after sending
+`/start` to the bot. When discovered by the workflow, it is written into the
+generated Wrangler config as a plain Worker variable.
 
 To update later, sync the fork from `sparticle9/filecubby`, review the incoming
 changes, and run the workflow again. This is still more work than the deploy

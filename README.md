@@ -21,8 +21,8 @@ storage chat, and service tokens.
 - Optionally write parseable Telegram captions or manifest messages for manual
   recovery and Telegram UI search.
 - Deploy from the Cloudflare button with account-local secrets and
-  automatically provisioned KV, or use `pnpm run setup` / the manual GitHub
-  Action for operator workflows.
+  automatically provisioned KV, or fork and use the manual GitHub Action when
+  you want repeatable updates from upstream.
 
 ## Limits
 
@@ -46,11 +46,15 @@ the bytes for HTTP download or media streaming.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/sparticle9/filecubby)
 
-This is the primary install path for this public repository. It does not
-require Cloudflare or Telegram secrets in this source repo. Cloudflare asks you
-to connect a GitHub or GitLab account, creates a copy of the project there,
+This is the lowest-friction install path for a brand-new Cloudflare account. It
+requires no Cloudflare or Telegram secrets in this source repo. Cloudflare asks
+you to connect a GitHub or GitLab account, creates a copy of the project there,
 connects that repo to Workers Builds, provisions Worker resources in your
 Cloudflare account, and prompts for Worker secrets from `.env.example`.
+
+Important trade-off: Cloudflare's deploy button creates a one-time copy of this
+repo. It is great for first install, but it is not the right update path. If you
+want future upstream updates, use **Fork And Deploy** instead.
 
 Before clicking:
 
@@ -71,10 +75,11 @@ In Cloudflare's setup form:
   chat.
 - Use the default `*.workers.dev` URL unless you want to add a custom domain
   after the first deploy.
-- Cloudflare will ask about each KV namespace. Choose **Create new**. If the
-  form pre-fills every namespace as `filecubby`, rename them to distinct names:
+- You should not need to choose KV namespaces in the setup form. The deploy
+  script creates and binds four private KV namespaces automatically:
   `filecubby-tasks`, `filecubby-users`, `filecubby-files`, and
-  `filecubby-download-info`.
+  `filecubby-download-info`. If Cloudflare's UI still shows old KV prompts,
+  leave them alone and let the deploy finish; the generated deploy config wins.
 
 After deploy, use `Authorization: Bearer <ADMIN_TOKEN>` for API or CLI calls.
 Custom domains are optional and can be attached later in Cloudflare.
@@ -89,20 +94,25 @@ environment variables.
 
 This is the second recommended path for users who can spend a few more minutes
 in GitHub. It keeps a clearer update story than a one-time clone: fork this
-repo, configure GitHub Environment secrets in the fork, then run the manual
+repo, add two GitHub Actions secrets in the fork, then run the manual
 **Deploy Filecubby** Action.
 
 Minimum setup in your fork:
 
-- Workflow input or Environment variable: `CLOUDFLARE_ACCOUNT_ID`
-- Required Environment secrets: `CLOUDFLARE_API_TOKEN`, `BOT_TOKEN`
-- Optional secrets: `ADMIN_TOKEN`, `FILECUBBY_TOKEN`
-- Optional workflow input or Environment variable: `CHAT_ID`
+- Required before the workflow can deploy: GitHub Actions secrets
+  `CLOUDFLARE_API_TOKEN` and `BOT_TOKEN`.
+- Required either before the workflow or in the **Run workflow** form:
+  `CLOUDFLARE_ACCOUNT_ID`.
+- Optional: `ADMIN_TOKEN`, `FILECUBBY_TOKEN`, and `CHAT_ID`.
 
-GitHub does not securely prompt for secrets in the **Run workflow** form. Before
-running the workflow, create the `production` Environment in your fork and add
-the two required secrets there. The workflow form can accept non-secret values
-like account ID and chat ID.
+GitHub does not securely prompt for secrets in the **Run workflow** form, so the
+Cloudflare API token and Telegram bot token must be created as Actions secrets
+first (`Settings -> Secrets and variables -> Actions -> New repository secret`).
+Non-secret values, such as Cloudflare account ID and chat ID, can be typed into
+the workflow form. `CHAT_ID` is deployed as a plain Worker variable, not a
+secret. If `ADMIN_TOKEN` is missing, the workflow generates one and sends it to
+your private Telegram bot chat; set it as a secret later if you want future runs
+to reuse the same token.
 
 Run **Actions -> Deploy Filecubby -> Run workflow**. `CHAT_ID` follows the same
 rules as the button path: set it as a non-secret input/variable, or leave it
