@@ -103,7 +103,9 @@ Minimum setup:
 
 Before running the workflow, add `CLOUDFLARE_API_TOKEN` and `BOT_TOKEN` under
 `Settings -> Secrets and variables -> Actions -> Secrets`. The workflow form can
-accept non-secret values like Cloudflare account ID and Telegram chat ID.
+accept non-secret values like Cloudflare account ID and Telegram chat ID. The
+workflow checks these values before checkout, dependency install, typecheck, or
+deploy work, so missing setup fails quickly.
 
 Workflow inputs worth setting:
 

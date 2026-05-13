@@ -110,9 +110,10 @@ Cloudflare API token and Telegram bot token must be created as Actions secrets
 first (`Settings -> Secrets and variables -> Actions -> New repository secret`).
 Non-secret values, such as Cloudflare account ID and chat ID, can be typed into
 the workflow form. `CHAT_ID` is deployed as a plain Worker variable, not a
-secret. If `ADMIN_TOKEN` is missing, the workflow generates one and sends it to
-your private Telegram bot chat; set it as a secret later if you want future runs
-to reuse the same token.
+secret. Missing required values are checked before dependency install or deploy
+work, so setup mistakes fail quickly. If `ADMIN_TOKEN` is missing, the workflow
+generates one and sends it to your private Telegram bot chat; set it as a secret
+later if you want future runs to reuse the same token.
 
 Run **Actions -> Deploy Filecubby -> Run workflow**. `CHAT_ID` follows the same
 rules as the button path: set it as a non-secret input/variable, or leave it

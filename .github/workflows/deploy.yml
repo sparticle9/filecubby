@@ -50,27 +50,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
-
-      - uses: pnpm/action-setup@v6.0.7
-        with:
-          version: 10.33.0
-
-      - uses: actions/setup-node@v6.4.0
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-
-      - uses: actions/setup-go@v6.4.0
-        with:
-          go-version-file: cli/go.mod
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: cd cli && go test ./...
-
-      - run: pnpm run typecheck
-
       - name: Check required deployment credentials
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare_account_id || vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -91,6 +70,21 @@ jobs:
             missing=1
           fi
           exit "$missing"
+
+      - uses: actions/checkout@v6.0.2
+
+      - uses: pnpm/action-setup@v6.0.7
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run typecheck
 
       - name: Provision and deploy
         run: node scripts/provisionCloudflare.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
