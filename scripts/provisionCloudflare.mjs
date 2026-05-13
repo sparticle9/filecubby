@@ -11,8 +11,8 @@ const envFileArg = process.argv.includes('--env-file')
 const kvBindings = [
   ['TASKS', 'tasks'],
   ['USERS', 'users'],
-  ['FILES', 'objects'],
-  ['FILE_DOWNLOAD_INFO', 'object-download-info'],
+  ['FILES', 'files'],
+  ['FILE_DOWNLOAD_INFO', 'download-info'],
 ];
 
 function required(name) {
@@ -358,11 +358,11 @@ async function main() {
       EDGE_CACHE_MAX_CHUNK_SIZE: Number(optional('EDGE_CACHE_MAX_CHUNK_SIZE', '50')),
       TELEGRAM_ORGANIZATION_MODE: optional('TELEGRAM_ORGANIZATION_MODE', 'caption'),
       FILECUBBY_MARKER: optional('FILECUBBY_MARKER', 'fc'),
+      CHAT_ID: chat.id,
     },
   });
 
   putSecret('BOT_TOKEN', botToken);
-  putSecret('CHAT_ID', chat.id);
   putSecret('ADMIN_TOKEN', adminToken);
 
   if (dryRun) {
